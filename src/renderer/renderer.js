@@ -1,0 +1,220 @@
+// DOM 元素
+const workDirInput = document.getElementById('workDir');
+const outputDirInput = document.getElementById('outputDir');
+const btnBrowseWork = document.getElementById('btnBrowseWork');
+const btnBrowseOutput = document.getElementById('btnBrowseOutput');
+const btnProcess = document.getElementById('btnProcess');
+const btnEditConfig = document.getElementById('btnEditConfig');
+const btnClearLog = document.getElementById('btnClearLog');
+const progressContainer = document.getElementById('progressContainer');
+const progressFill = document.getElementById('progressFill');
+const progressText = document.getElementById('progressText');
+const logArea = document.getElementById('logArea');
+const unmatchedSection = document.getElementById('unmatchedSection');
+const unmatchedList = document.getElementById('unmatchedList');
+
+// 状态
+let isProcessing = false;
+
+// ========== 工具函数 ==========
+
+function timestamp() {
+  const now = new Date();
+  return `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+}
+
+function log(message, type) {
+  type = type || 'info';
+  const entry = document.createElement('div');
+  entry.className = 'log-entry log-' + type;
+  entry.textContent = '[' + timestamp() + '] ' + message;
+  logArea.appendChild(entry);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function setUIEnabled(enabled) {
+  btnBrowseWork.disabled = !enabled;
+  btnBrowseOutput.disabled = !enabled;
+  btnProcess.disabled = !enabled;
+  workDirInput.disabled = !enabled;
+  outputDirInput.disabled = !enabled;
+  isProcessing = !enabled;
+}
+
+function updateProgress(percent, text) {
+  progressContainer.style.display = 'flex';
+  progressFill.style.width = percent + '%';
+  progressText.textContent = text || (percent + '%');
+}
+
+function hideProgress() {
+  progressContainer.style.display = 'none';
+  progressFill.style.width = '0%';
+  progressText.textContent = '0%';
+}
+
+function showUnmatchedFiles(files) {
+  if (!files || files.length === 0) {
+    unmatchedSection.style.display = 'none';
+    return;
+  }
+  unmatchedSection.style.display = 'block';
+  unmatchedList.innerHTML = '';
+  files.forEach(function (f) {
+    const item = document.createElement('div');
+    item.className = 'unmatched-item';
+    item.textContent = f;
+    unmatchedList.appendChild(item);
+  });
+}
+
+// ========== 初始化 ==========
+
+async function init() {
+  // 优先恢复上次使用的目录，没有则使用系统默认
+  const savedWorkDir = localStorage.getItem('workDir');
+  const savedOutputDir = localStorage.getItem('outputDir');
+  if (savedWorkDir) {
+    workDirInput.value = savedWorkDir;
+  }
+  if (savedOutputDir) {
+    outputDirInput.value = savedOutputDir;
+  }
+  // 如果没有保存的目录，使用系统默认值
+  if (!savedWorkDir || !savedOutputDir) {
+    try {
+      const defaults = await window.electronAPI.getDefaultDirectories();
+      if (!savedWorkDir) workDirInput.value = defaults.workDir;
+      if (!savedOutputDir) outputDirInput.value = defaults.outputDir;
+    } catch (e) {
+      // 忽略获取默认目录失败
+    }
+  }
+}
+
+// ========== 事件处理 ==========
+
+btnBrowseWork.addEventListener('click', async () => {
+  const dir = await window.electronAPI.selectDirectory();
+  if (dir) {
+    workDirInput.value = dir;
+    localStorage.setItem('workDir', dir);
+  }
+});
+
+btnBrowseOutput.addEventListener('click', async () => {
+  const dir = await window.electronAPI.selectDirectory();
+  if (dir) {
+    outputDirInput.value = dir;
+    localStorage.setItem('outputDir', dir);
+  }
+});
+
+btnClearLog.addEventListener('click', () => {
+  logArea.innerHTML = '';
+  log('日志已清空', 'info');
+});
+
+btnEditConfig.addEventListener('click', async () => {
+  log('正在打开配置文件...', 'info');
+  try {
+    await window.electronAPI.openConfigFile();
+  } catch (e) {
+    log('打开配置文件失败: ' + e.message, 'error');
+  }
+});
+
+btnProcess.addEventListener('click', async () => {
+  const workDir = workDirInput.value.trim();
+  const outputDir = outputDirInput.value.trim();
+
+  if (!workDir) {
+    log('请选择工作目录', 'error');
+    return;
+  }
+  if (!outputDir) {
+    log('请选择输出目录', 'error');
+    return;
+  }
+
+  // 隐藏之前的未匹配提示
+  unmatchedSection.style.display = 'none';
+
+  // 保存目录
+  localStorage.setItem('workDir', workDir);
+  localStorage.setItem('outputDir', outputDir);
+
+  // 禁用UI
+  setUIEnabled(false);
+  updateProgress(0, '准备...');
+  log('========== 开始处理 ==========', 'info');
+  log('工作目录: ' + workDir, 'info');
+  log('输出目录: ' + outputDir, 'info');
+
+  // 监听进度
+  window.electronAPI.onProgress((event) => {
+    switch (event.type) {
+      case 'scanning':
+      case 'processing':
+        if (event.totalRows && event.totalRows > 0 && event.rowsProcessed !== undefined) {
+          const pct = Math.round((event.rowsProcessed / event.totalRows) * 100);
+          updateProgress(pct);
+        }
+        log(event.message, 'info');
+        break;
+      case 'writing':
+        log(event.message, 'success');
+        break;
+      case 'cleaning':
+        log(event.message, 'info');
+        break;
+      case 'error':
+        log(event.message, 'error');
+        break;
+      case 'complete':
+        log(event.message, 'success');
+        log('========== 处理完成 ==========', 'success');
+        break;
+    }
+  });
+
+  try {
+    const result = await window.electronAPI.startProcessing({ workDir, outputDir });
+    window.electronAPI.removeProgressListener();
+
+    // 显示未匹配文件
+    if (result.unmatchedFiles && result.unmatchedFiles.length > 0) {
+      showUnmatchedFiles(result.unmatchedFiles);
+      log('发现 ' + result.unmatchedFiles.length + ' 个未识别的文件格式，请点击"修改配置"按钮添加对应格式规则', 'error');
+    }
+
+    if (result.success) {
+      log('总计: ' + result.processedFiles + '/' + result.totalFiles + ' 个文件, ' + result.processedRows + ' 行数据', 'success');
+      if (result.summaryFilePath) {
+        log('汇总文件: ' + result.summaryFilePath, 'success');
+      }
+      updateProgress(100, '完成');
+      setTimeout(hideProgress, 3000);
+    } else {
+      if (result.unmatchedFiles && result.unmatchedFiles.length > 0) {
+        log('处理完成，但有未识别的文件格式', 'error');
+      }
+      if (result.errors.length > 0) {
+        log('处理过程中出现错误，详见上方日志', 'error');
+      }
+    }
+
+    if (result.errors.length > 0) {
+      log('错误详情:', 'error');
+      result.errors.forEach(function(e) { log('  - ' + e, 'error'); });
+    }
+  } catch (err) {
+    log('处理异常: ' + err.message, 'error');
+    hideProgress();
+  } finally {
+    setUIEnabled(true);
+  }
+});
+
+// 启动
+init();

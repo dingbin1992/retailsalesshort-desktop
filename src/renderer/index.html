@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
+  <title>流向整理工具</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>流向整理工具</h1>
+      <p class="subtitle">湖北区域每日网上下载出库汇总</p>
+    </header>
+
+    <section class="config-panel">
+      <div class="input-group">
+        <label for="workDir">工作目录（Excel文件所在目录）</label>
+        <div class="input-row">
+          <input type="text" id="workDir" placeholder="选择包含 .xls/.xlsx 文件的目录..." readonly>
+          <button id="btnBrowseWork" class="btn-browse">浏览...</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label for="outputDir">输出目录（汇总文件保存位置）</label>
+        <div class="input-row">
+          <input type="text" id="outputDir" placeholder="选择汇总文件输出目录..." readonly>
+          <button id="btnBrowseOutput" class="btn-browse">浏览...</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="action-panel">
+      <button id="btnProcess" class="btn-process">开始处理</button>
+      <button id="btnEditConfig" class="btn-edit-config">修改配置</button>
+      <div id="progressContainer" class="progress-container" style="display: none;">
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <span id="progressText" class="progress-text">0%</span>
+      </div>
+    </section>
+
+    <section id="unmatchedSection" class="unmatched-panel" style="display: none;">
+      <div class="unmatched-header">
+        <span class="unmatched-icon">⚠</span>
+        <span>以下文件格式未识别，请修改配置后重试</span>
+      </div>
+      <div id="unmatchedList" class="unmatched-list"></div>
+    </section>
+
+    <section class="log-panel">
+      <div class="log-header">
+        <span>处理日志</span>
+        <button id="btnClearLog" class="btn-clear">清空</button>
+      </div>
+      <div id="logArea" class="log-area">
+        <div class="log-entry log-info">就绪，请选择工作目录和输出目录后点击"开始处理"。</div>
+      </div>
+    </section>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
