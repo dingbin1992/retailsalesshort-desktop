@@ -1,4 +1,6 @@
 // DOM 元素
+const selectYear = document.getElementById('selectYear');
+const selectMonth = document.getElementById('selectMonth');
 const workDirInput = document.getElementById('workDir');
 const outputDirInput = document.getElementById('outputDir');
 const btnBrowseWork = document.getElementById('btnBrowseWork');
@@ -33,6 +35,8 @@ function log(message, type) {
 }
 
 function setUIEnabled(enabled) {
+  selectYear.disabled = !enabled;
+  selectMonth.disabled = !enabled;
   btnBrowseWork.disabled = !enabled;
   btnBrowseOutput.disabled = !enabled;
   btnProcess.disabled = !enabled;
@@ -71,24 +75,50 @@ function showUnmatchedFiles(files) {
 // ========== 初始化 ==========
 
 async function init() {
-  // 优先恢复上次使用的目录，没有则使用系统默认
+  // 生成年份选项（2024年 ~ 当前年+1）
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  for (let year = 2024; year <= currentYear + 1; year++) {
+    const optionEl = document.createElement('option');
+    optionEl.value = year;
+    optionEl.textContent = year + '年';
+    selectYear.appendChild(optionEl);
+  }
+
+  // 生成月份选项（1~12月）
+  for (let month = 1; month <= 12; month++) {
+    const optionEl = document.createElement('option');
+    optionEl.value = month;
+    optionEl.textContent = month + '月';
+    selectMonth.appendChild(optionEl);
+  }
+
+  // 恢复上次使用的目录
   const savedWorkDir = localStorage.getItem('workDir');
   const savedOutputDir = localStorage.getItem('outputDir');
-  if (savedWorkDir) {
-    workDirInput.value = savedWorkDir;
+  const savedYear = localStorage.getItem('selectYear');
+  const savedMonth = localStorage.getItem('selectMonth');
+
+  if (savedWorkDir) workDirInput.value = savedWorkDir;
+  if (savedOutputDir) outputDirInput.value = savedOutputDir;
+  if (savedYear) selectYear.value = savedYear;
+  if (savedMonth) selectMonth.value = savedMonth;
+
+  // 使用系统默认值填充未保存的字段（需求第5点）
+  try {
+    const defaults = await window.electronAPI.getDefaultDirectories();
+    if (!savedWorkDir) workDirInput.value = defaults.workDir;
+    if (!savedOutputDir) outputDirInput.value = defaults.outputDir;
+  } catch (e) {
+    // 忽略
   }
-  if (savedOutputDir) {
-    outputDirInput.value = savedOutputDir;
+
+  // 如果没有保存的年月，默认选中当前年月
+  if (!savedYear) {
+    selectYear.value = currentYear;
   }
-  // 如果没有保存的目录，使用系统默认值
-  if (!savedWorkDir || !savedOutputDir) {
-    try {
-      const defaults = await window.electronAPI.getDefaultDirectories();
-      if (!savedWorkDir) workDirInput.value = defaults.workDir;
-      if (!savedOutputDir) outputDirInput.value = defaults.outputDir;
-    } catch (e) {
-      // 忽略获取默认目录失败
-    }
+  if (!savedMonth) {
+    selectMonth.value = now.getMonth() + 1;
   }
 }
 
@@ -110,6 +140,14 @@ btnBrowseOutput.addEventListener('click', async () => {
   }
 });
 
+selectYear.addEventListener('change', () => {
+  if (selectYear.value) localStorage.setItem('selectYear', selectYear.value);
+});
+
+selectMonth.addEventListener('change', () => {
+  if (selectMonth.value) localStorage.setItem('selectMonth', selectMonth.value);
+});
+
 btnClearLog.addEventListener('click', () => {
   logArea.innerHTML = '';
   log('日志已清空', 'info');
@@ -127,7 +165,15 @@ btnEditConfig.addEventListener('click', async () => {
 btnProcess.addEventListener('click', async () => {
   const workDir = workDirInput.value.trim();
   const outputDir = outputDirInput.value.trim();
+  const year = selectYear.value;
+  const month = selectMonth.value;
 
+  if (!year || !month) {
+    log('请选择年份和月份', 'error');
+    return;
+  }
+
+  const yearMonth = year + '年' + month + '月';
   if (!workDir) {
     log('请选择工作目录', 'error');
     return;
@@ -137,21 +183,21 @@ btnProcess.addEventListener('click', async () => {
     return;
   }
 
-  // 隐藏之前的未匹配提示
   unmatchedSection.style.display = 'none';
 
-  // 保存目录
+  // 保存选择
   localStorage.setItem('workDir', workDir);
   localStorage.setItem('outputDir', outputDir);
+  localStorage.setItem('selectYear', year);
+  localStorage.setItem('selectMonth', month);
 
-  // 禁用UI
   setUIEnabled(false);
   updateProgress(0, '准备...');
   log('========== 开始处理 ==========', 'info');
+  log('选择年月: ' + yearMonth, 'info');
   log('工作目录: ' + workDir, 'info');
   log('输出目录: ' + outputDir, 'info');
 
-  // 监听进度
   window.electronAPI.onProgress((event) => {
     switch (event.type) {
       case 'scanning':
@@ -179,10 +225,9 @@ btnProcess.addEventListener('click', async () => {
   });
 
   try {
-    const result = await window.electronAPI.startProcessing({ workDir, outputDir });
+    const result = await window.electronAPI.startProcessing({ workDir, outputDir, yearMonth });
     window.electronAPI.removeProgressListener();
 
-    // 显示未匹配文件
     if (result.unmatchedFiles && result.unmatchedFiles.length > 0) {
       showUnmatchedFiles(result.unmatchedFiles);
       log('发现 ' + result.unmatchedFiles.length + ' 个未识别的文件格式，请点击"修改配置"按钮添加对应格式规则', 'error');

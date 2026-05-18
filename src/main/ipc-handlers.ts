@@ -5,7 +5,6 @@ import { ProcessingConfig } from '../shared/types';
 import { ExcelProcessor } from './excel-processor';
 import { PatternDefinition } from '../shared/types';
 
-// 全局变量引用（由 main.ts 设置）
 let patterns: PatternDefinition[] = [];
 
 export function setPatterns(p: PatternDefinition[]): void {
@@ -36,11 +35,11 @@ export function registerIpcHandlers(): void {
     return result.filePaths[0];
   });
 
-  // 获取默认目录
+  // 获取默认目录（需求第5点）
   ipcMain.handle('config:getDefaults', async () => {
     return {
       workDir: app.getPath('downloads'),
-      outputDir: app.getPath('desktop'),
+      outputDir: 'H:\\0、工作\\0、每日纯销统计\\实时下载流向数据',
     };
   });
 
@@ -55,11 +54,15 @@ export function registerIpcHandlers(): void {
     await shell.openPath(dirPath);
   });
 
-  // 启动处理
+  // 启动处理（需求第6点）
   ipcMain.handle('processing:start', async (event, config: ProcessingConfig) => {
-    const processor = new ExcelProcessor(config.workDir, config.outputDir, patterns);
+    const processor = new ExcelProcessor(
+      config.workDir,
+      config.outputDir,
+      config.yearMonth,
+      patterns,
+    );
 
-    // 设置进度回调
     const win = BrowserWindow.fromWebContents(event.sender);
     processor.setProgressCallback((progressEvent) => {
       if (win && !win.isDestroyed()) {

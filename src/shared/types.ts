@@ -18,6 +18,7 @@ export interface PatternsConfig {
 export interface ProcessingConfig {
   workDir: string;
   outputDir: string;
+  yearMonth: string; // 用户选择的年月，格式如 "2025年11月"
 }
 
 // 处理进度事件（主进程推送至渲染进程）

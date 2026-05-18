@@ -4,9 +4,13 @@ import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
 import { PatternDefinition, ProgressEvent, ProcessingResult } from '../shared/types';
 
+const BASE_TABLE_PATH = 'H:\\0、工作\\0、每日纯销统计\\☆☆纯销统计基表.xlsx';
+const BASE_DIR = 'H:\\0、工作\\0、每日纯销统计';
+
 export class ExcelProcessor {
   private workDir: string;
   private outputDir: string;
+  private yearMonth: string;
   private patterns: PatternDefinition[];
 
   private summaryWb!: ExcelJS.Workbook;
@@ -15,13 +19,14 @@ export class ExcelProcessor {
   private processedRows: number = 0;
   private unmatchedFiles: string[] = [];
   private errors: string[] = [];
+  private allData: any[][] = [];
 
-  // 进度回调
   private onProgress: ((event: ProgressEvent) => void) | null = null;
 
-  constructor(workDir: string, outputDir: string, patterns: PatternDefinition[]) {
+  constructor(workDir: string, outputDir: string, yearMonth: string, patterns: PatternDefinition[]) {
     this.workDir = workDir;
     this.outputDir = outputDir;
+    this.yearMonth = yearMonth;
     this.patterns = patterns;
   }
 
@@ -32,6 +37,39 @@ export class ExcelProcessor {
   private emit(event: ProgressEvent): void {
     if (this.onProgress) {
       this.onProgress(event);
+    }
+  }
+
+  // ========== 路径工具 ==========
+
+  /** 将 "2025年11月" 转为 "25年11月", "2026年3月" 转为 "26年03月" */
+  buildShortYearMonth(): string {
+    const match = this.yearMonth.match(/(\d{4})年(\d{1,2})月/);
+    if (!match) {
+      throw new Error(`无效的年月格式: ${this.yearMonth}，应为"XXXX年XX月"`);
+    }
+    const year = match[1].slice(2);
+    const month = match[2].padStart(2, '0');
+    return `${year}年${month}月`;
+  }
+
+  /** 构建目标文件路径 */
+  buildTargetTablePath(): string {
+    const short = this.buildShortYearMonth();
+    return path.join(BASE_DIR, short, `湖北纯销每日统计${short}.xlsx`);
+  }
+
+  // ========== 前置校验 ==========
+
+  validatePrerequisites(): void {
+    // 步骤1：检查输出目录
+    if (!fs.existsSync(this.outputDir)) {
+      throw new Error(`输出目录不存在: ${this.outputDir}，请确认路径后重试。`);
+    }
+
+    // 步骤2：检查基表文件
+    if (!fs.existsSync(BASE_TABLE_PATH)) {
+      throw new Error(`基表文件不存在: ${BASE_TABLE_PATH}，请确认文件路径后重试。`);
     }
   }
 
@@ -57,7 +95,6 @@ export class ExcelProcessor {
     ];
 
     await this.summaryWb.xlsx.writeFile(this.summaryFilePath);
-    // 重新读取以便追加
     this.summaryWb = new ExcelJS.Workbook();
     await this.summaryWb.xlsx.readFile(this.summaryFilePath);
 
@@ -92,14 +129,13 @@ export class ExcelProcessor {
     return Math.max(0, data.length - 1);
   }
 
-  // ========== 日期标准化（严格移植 Python normalize_date） ==========
+  // ========== 日期标准化 ==========
 
   normalizeDate(value: any, patternName: string, srcCol: number): any {
     if (value === null || value === undefined || value === '') {
       return value;
     }
 
-    // 处理字符串中的空格
     if (typeof value === 'string') {
       if (patternName === 'pattern8' && srcCol === 2) {
         if (value.includes(' ')) {
@@ -110,7 +146,6 @@ export class ExcelProcessor {
       }
     }
 
-    // 日期格式化
     if (typeof value === 'string') {
       if (value.includes('/') || value.includes('-')) {
         const dateParts = value.replace(/\//g, '-').split('-');
@@ -130,7 +165,7 @@ export class ExcelProcessor {
     return value;
   }
 
-  // ========== 处理单个工作表（严格移植 Python process_file） ==========
+  // ========== 处理单个工作表 ==========
 
   processWorksheet(sheet: XLSX.WorkSheet, pattern: PatternDefinition): any[][] {
     const allData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
@@ -139,11 +174,10 @@ export class ExcelProcessor {
     }
 
     const mapping = pattern.mapping;
-    const maxCol = Math.max(...Object.keys(mapping).map(Number));
     const result: any[][] = [];
 
     const batchSize = 1000;
-    const dataRows = allData.slice(1); // 跳过表头行
+    const dataRows = allData.slice(1);
 
     for (let startIdx = 0; startIdx < dataRows.length; startIdx += batchSize) {
       const batch = dataRows.slice(startIdx, startIdx + batchSize);
@@ -153,7 +187,6 @@ export class ExcelProcessor {
           continue;
         }
 
-        // 跳过空行
         if (rowData.every((v: any) => v === null || v === undefined || v === '')) {
           continue;
         }
@@ -164,11 +197,9 @@ export class ExcelProcessor {
           const dstCol = mapping[srcCol];
           let value = srcCol - 1 < rowData.length ? rowData[srcCol - 1] : null;
 
-          // 日期列特殊处理
           if (dstCol === 1) {
             value = this.normalizeDate(value, pattern.name, srcCol);
           } else if (typeof value === 'string') {
-            // 其他列的字符串处理
             if (pattern.name === 'pattern8' && srcCol === 2) {
               if (value.includes(' ')) {
                 value = value.split(' ')[0];
@@ -181,7 +212,6 @@ export class ExcelProcessor {
           newRow[dstCol - 1] = value;
         }
 
-        // 数量列（第6列，unshift后为第7列）转换为数值格式
         const qty = newRow[5];
         if (qty !== null && qty !== undefined && qty !== '') {
           const num = Number(qty);
@@ -190,7 +220,6 @@ export class ExcelProcessor {
           }
         }
 
-        // 添加商业单位信息到第一列
         newRow.unshift(pattern.businessUnit);
         result.push(newRow);
       }
@@ -212,20 +241,14 @@ export class ExcelProcessor {
       this.emit({ type: 'error', message: '无法获取汇总工作表' });
       return;
     }
-    const batchSize = 500;
 
-    for (let i = 0; i < result.length; i += batchSize) {
-      const batch = result.slice(i, i + batchSize);
+    for (let i = 0; i < result.length; i += 500) {
+      const batch = result.slice(i, i + 500);
       try {
         ws.addRows(batch);
       } catch {
-        // 批量写入失败则逐行写入
         for (const row of batch) {
-          try {
-            ws.addRow(row);
-          } catch {
-            // 忽略单行写入失败
-          }
+          try { ws.addRow(row); } catch { /* 忽略 */ }
         }
       }
     }
@@ -234,63 +257,235 @@ export class ExcelProcessor {
     this.emit({ type: 'writing', message: `已追加 ${result.length} 行数据到汇总文件` });
   }
 
-  // ========== 清理工作目录 ==========
+  // ========== 日期转Excel日期值 ==========
 
-  cleanupWorkDir(): void {
-    this.emit({ type: 'cleaning', message: '正在清空工作目录中的Excel文件...' });
-
-    const excelFiles: string[] = [];
-    for (const ext of ['*.xls', '*.xlsx']) {
-      const files = fs.readdirSync(this.workDir).filter(f =>
-        f.toLowerCase().endsWith(ext.replace('*', ''))
-      ).map(f => path.join(this.workDir, f));
-      excelFiles.push(...files);
-    }
-
-    if (excelFiles.length === 0) {
-      this.emit({ type: 'cleaning', message: '工作目录中没有Excel文件需要清理' });
-      return;
-    }
-
-    let successCount = 0;
-    for (const filePath of excelFiles) {
-      try {
-        fs.unlinkSync(filePath);
-        successCount++;
-      } catch (e: any) {
-        this.errors.push(`删除失败 ${path.basename(filePath)}: ${e.message}`);
-      }
-    }
-
-    this.emit({ type: 'cleaning', message: `清理完成: 成功删除 ${successCount} 个文件` });
+  private isDateString(val: any): boolean {
+    return typeof val === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(val);
   }
 
-  // ========== 主处理流程（严格移植 Python run） ==========
+  private toDateValue(val: any): Date | any {
+    if (this.isDateString(val)) {
+      return new Date(val);
+    }
+    return val;
+  }
+
+  // ========== 格式化汇总文件日期列 ==========
+
+  private async formatSummaryDates(): Promise<void> {
+    const ws = this.summaryWb.getWorksheet(1);
+    if (!ws) return;
+
+    let formattedCount = 0;
+    ws.eachRow((row, rowNum) => {
+      if (rowNum <= 1) return; // 跳过表头
+      const cell = row.getCell(2); // B列 = 日期
+      if (this.isDateString(cell.value)) {
+        cell.value = new Date(cell.value as string);
+        cell.numFmt = 'yyyy-mm-dd';
+        formattedCount++;
+      }
+    });
+
+    if (formattedCount > 0) {
+      await this.summaryWb.xlsx.writeFile(this.summaryFilePath);
+      this.emit({ type: 'writing', message: `已格式化 ${formattedCount} 个日期单元格` });
+    }
+  }
+
+  // ========== 构建公式 ==========
+
+  private formulaH(row: number): string {
+    return `IF(ISBLANK(C${row}),0,IF(ISERROR(U${row}*G${row}/M${row}*O${row}),0,U${row}*G${row}/M${row}*O${row}))`;
+  }
+
+  private formulaI(row: number): string {
+    return `IF(ISBLANK(F${row}),"",XLOOKUP(F${row},[☆☆纯销统计基表.xlsx]终端单位与区域归属!A:A,[☆☆纯销统计基表.xlsx]终端单位与区域归属!D:D,"错误"))`;
+  }
+
+  private formulaJ(row: number): string {
+    return `IF(ISBLANK(F${row}),"",XLOOKUP(F${row},[☆☆纯销统计基表.xlsx]终端单位与区域归属!A:A,[☆☆纯销统计基表.xlsx]终端单位与区域归属!C:C,"错误"))`;
+  }
+
+  private formulaK(row: number): string {
+    return `IF(ISBLANK(C${row}),"",XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!E:E,""))`;
+  }
+
+  private formulaL(row: number): string {
+    return `IF(ISBLANK(C${row}),"",XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!F:F,""))`;
+  }
+
+  private formulaM(row: number): string {
+    return `IF(ISBLANK(C${row}),0,XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!G:G,0))`;
+  }
+
+  private formulaN(row: number): string {
+    return `IF(ISBLANK(C${row}),"",XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!I:I,0))`;
+  }
+
+  private formulaO(row: number): string {
+    return `IF(ISBLANK(C${row}),0,XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!H:H,0))`;
+  }
+
+  private formulaP(row: number): string {
+    return `IF(ISBLANK(C${row}),0,IF(ISERROR(U${row}*G${row}/M${row}),0,U${row}*G${row}/M${row}))`;
+  }
+
+  private formulaQ(row: number): string {
+    return `IF(ISBLANK(C${row}),0,IF(ISERROR(U${row}*G${row}/M${row}*O${row}/10000),0,U${row}*G${row}/M${row}*O${row}/10000))`;
+  }
+
+  private formulaR(row: number): string {
+    return `IF(ISBLANK(C${row}),0,XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!J:J,0))`;
+  }
+
+  private formulaS(row: number): string {
+    return `IF(ISBLANK(C${row}),0,IF(ISERROR(U${row}*G${row}/M${row}),0,U${row}*G${row}/M${row}))*IF(ISBLANK(C${row}),0,XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!K:K,0))`;
+  }
+
+  private formulaT(row: number): string {
+    return `IF(OR(K${row}="错误",B${row}>(TODAY()-1),J${row}="其他",AND(B${row}>DATE(2026,2,28),R${row}="川倍清")),"否",IFERROR(XLOOKUP(F${row}&R${row},[☆☆纯销统计基表.xlsx]录入明细整理!D:D&[☆☆纯销统计基表.xlsx]录入明细整理!E:E,[☆☆纯销统计基表.xlsx]录入明细整理!F:F),"是"))`;
+  }
+
+  private formulaU(row: number): string {
+    return `IF(ISBLANK(C${row}),"",XLOOKUP(C${row}&D${row},[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!L:L,""))`;
+  }
+
+  // ========== 写入目标文件 ==========
+
+  async writeToTargetTable(): Promise<void> {
+    const targetPath = this.buildTargetTablePath();
+    this.emit({ type: 'processing', message: `正在写入目标文件: ${targetPath}` });
+
+    const maxLine = this.allData.length + 1; // 数据行数 + 表头行
+    if (maxLine < 2) {
+      throw new Error(`数据行数不足（需要至少1行数据，当前0行），无法写入目标文件。`);
+    }
+
+    // 确保目标目录存在
+    const targetDir = path.dirname(targetPath);
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    // 打开或创建工作簿
+    let targetWb: ExcelJS.Workbook;
+    if (fs.existsSync(targetPath)) {
+      targetWb = new ExcelJS.Workbook();
+      await targetWb.xlsx.readFile(targetPath);
+    } else {
+      targetWb = new ExcelJS.Workbook();
+      targetWb.addWorksheet('纯销明细');
+    }
+
+    // 获取或创建"纯销明细"工作表
+    let ws = targetWb.getWorksheet('纯销明细');
+    if (!ws) {
+      ws = targetWb.addWorksheet('纯销明细');
+    }
+
+    // 步骤2：写入汇总数据到 A-G 列（从第2行开始，第1行为表头）
+    this.emit({ type: 'writing', message: `正在粘贴 ${this.allData.length} 行数据到纯销明细...` });
+    for (let i = 0; i < this.allData.length; i++) {
+      const row = ws.getRow(i + 2);
+      const dataRow = this.allData[i];
+      for (let col = 0; col < 7 && col < dataRow.length; col++) {
+        const val = dataRow[col];
+        if (col === 1 && this.isDateString(val)) {
+          const cell = row.getCell(col + 1);
+          cell.value = new Date(val as string);
+          cell.numFmt = 'yyyy-mm-dd';
+        } else {
+          row.getCell(col + 1).value = val;
+        }
+      }
+      row.commit();
+    }
+
+    // 步骤3：填充公式 H-U 列（j = 2 到 maxLine）
+    this.emit({ type: 'writing', message: `正在填充公式 H-U 列，共 ${this.allData.length} 行...` });
+
+    const formulaBuilders = [
+      this.formulaH.bind(this),
+      this.formulaI.bind(this),
+      this.formulaJ.bind(this),
+      this.formulaK.bind(this),
+      this.formulaL.bind(this),
+      this.formulaM.bind(this),
+      this.formulaN.bind(this),
+      this.formulaO.bind(this),
+      this.formulaP.bind(this),
+      this.formulaQ.bind(this),
+      this.formulaR.bind(this),
+      this.formulaS.bind(this),
+      this.formulaT.bind(this),
+      this.formulaU.bind(this),
+    ];
+
+    // 列号：H=8 到 U=21
+    for (let rowNum = 2; rowNum <= maxLine; rowNum++) {
+      const row = ws.getRow(rowNum);
+      for (let fi = 0; fi < formulaBuilders.length; fi++) {
+        const colNum = 8 + fi; // H=8, I=9, ..., U=21
+        row.getCell(colNum).value = { formula: formulaBuilders[fi](rowNum) };
+      }
+      row.commit();
+    }
+
+    await targetWb.xlsx.writeFile(targetPath);
+    this.emit({ type: 'writing', message: `目标文件写入完成: ${targetPath}` });
+  }
+
+  // ========== 主处理流程 ==========
 
   async run(): Promise<ProcessingResult> {
     this.totalRows = 0;
     this.processedRows = 0;
     this.unmatchedFiles = [];
     this.errors = [];
+    this.allData = [];
 
-    // 1. 确保输出目录存在
-    if (!fs.existsSync(this.outputDir)) {
-      fs.mkdirSync(this.outputDir, { recursive: true });
+    const { shell } = await import('electron');
+
+    // 步骤1+2：前置校验
+    this.emit({ type: 'scanning', message: '正在验证前置条件...' });
+    try {
+      this.validatePrerequisites();
+      this.emit({ type: 'scanning', message: `输出目录验证通过: ${this.outputDir}` });
+      this.emit({ type: 'scanning', message: `基表文件验证通过: ${BASE_TABLE_PATH}` });
+    } catch (e: any) {
+      this.emit({ type: 'error', message: e.message });
+      return {
+        success: false,
+        totalFiles: 0,
+        processedFiles: 0,
+        totalRows: 0,
+        processedRows: 0,
+        summaryFilePath: '',
+        unmatchedFiles: [],
+        errors: [e.message],
+      };
     }
 
-    // 2. 获取所有Excel文件
+    // 步骤5：获取所有Excel文件
     const excelFiles: string[] = [];
-    for (const ext of ['.xls', '.xlsx']) {
-      const files = fs.readdirSync(this.workDir).filter(f =>
-        f.toLowerCase().endsWith(ext)
-      ).map(f => path.join(this.workDir, f));
-      excelFiles.push(...files);
+    if (fs.existsSync(this.workDir)) {
+      for (const ext of ['.xls', '.xlsx']) {
+        const files = fs.readdirSync(this.workDir).filter(f =>
+          f.toLowerCase().endsWith(ext)
+        ).map(f => path.join(this.workDir, f));
+        excelFiles.push(...files);
+      }
     }
 
     this.emit({ type: 'scanning', message: `找到 ${excelFiles.length} 个Excel文件` });
 
     if (excelFiles.length === 0) {
-      this.emit({ type: 'complete', message: '没有找到Excel文件' });
+      this.emit({ type: 'complete', message: '没有找到Excel文件，仅执行目标文件更新' });
+      // 即使没有文件，也尝试处理已有数据
+      if (this.allData.length > 0) {
+        await this.writeToTargetTable();
+      }
       return {
         success: true,
         totalFiles: 0,
@@ -303,10 +498,10 @@ export class ExcelProcessor {
       };
     }
 
-    // 3. 创建汇总文件
+    // 创建汇总文件
     await this.createSummaryFile();
 
-    // 4. 统计总行数
+    // 统计总行数
     this.emit({ type: 'scanning', message: '正在统计文件行数...' });
     for (const filePath of excelFiles) {
       try {
@@ -323,7 +518,7 @@ export class ExcelProcessor {
 
     this.emit({ type: 'scanning', message: `所有文件共包含 ${this.totalRows} 行数据` });
 
-    // 5. 串行处理文件
+    // 串行处理文件，收集所有数据
     let processedFiles = 0;
     for (let i = 0; i < excelFiles.length; i++) {
       const filePath = excelFiles[i];
@@ -340,7 +535,6 @@ export class ExcelProcessor {
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName] as XLSX.WorkSheet;
 
-        // 读取表头行
         const headerRow: any[] = (XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][])[0] || [];
         const headers: Record<number, string> = {};
         for (let col = 1; col <= headerRow.length; col++) {
@@ -350,13 +544,13 @@ export class ExcelProcessor {
           }
         }
 
-        // 识别文件格式
         const pattern = this.getFilePattern(headers);
 
         if (pattern) {
           this.emit({ type: 'processing', message: `识别为格式: ${pattern.name}` });
           const data = this.processWorksheet(sheet, pattern);
           if (data.length > 0) {
+            this.allData.push(...data);
             await this.appendToSummary(data);
             this.emit({ type: 'processing', message: `成功处理 ${data.length} 行数据` });
           }
@@ -373,7 +567,7 @@ export class ExcelProcessor {
       }
     }
 
-    // 6. 打印汇总信息
+    // 汇总信息
     this.emit({
       type: 'processing',
       rowsProcessed: this.processedRows,
@@ -382,21 +576,27 @@ export class ExcelProcessor {
     });
 
     if (this.totalRows > 0) {
-      const rate = this.totalRows > 0 ? (this.processedRows / this.totalRows * 100).toFixed(2) : '0';
+      const rate = (this.processedRows / this.totalRows * 100).toFixed(2);
       this.emit({ type: 'processing', message: `处理率: ${rate}%` });
-      if (this.processedRows < this.totalRows) {
-        this.emit({ type: 'error', message: `警告：有 ${this.totalRows - this.processedRows} 行数据未被处理` });
+    }
+
+    // 格式化汇总文件的日期列
+    await this.formatSummaryDates();
+
+    // 步骤6.2+6.3：写入目标文件（汇总数据 + 公式）
+    if (this.allData.length > 0) {
+      try {
+        // 先打开基表文件，确保Excel能解析公式中的外部引用
+        shell.openPath(BASE_TABLE_PATH);
+        await this.writeToTargetTable();
+      } catch (e: any) {
+        this.errors.push(`写入目标文件失败: ${e.message}`);
+        this.emit({ type: 'error', message: `写入目标文件失败: ${e.message}` });
       }
     }
 
-    // 7. 只有在全部数据处理成功时才清空工作目录
-    if (this.totalRows > 0 && (this.totalRows - this.processedRows) === 0) {
-      this.cleanupWorkDir();
-    }
-
-    // 8. 打开输出目录
-    const { shell } = await import('electron');
-    shell.openPath(this.outputDir);
+    // 打开统计目录
+    shell.openPath(BASE_DIR);
 
     this.emit({ type: 'complete', message: '流向整理完成！' });
 

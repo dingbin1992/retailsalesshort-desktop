@@ -16,6 +16,20 @@
 
     <section class="config-panel">
       <div class="input-group">
+        <label for="selectYear">选择年月</label>
+        <div class="input-row year-month-row">
+          <select id="selectYear" class="year-select">
+            <option value="">请选择年份...</option>
+          </select>
+          <span class="year-month-sep">年</span>
+          <select id="selectMonth" class="month-select">
+            <option value="">请选择月份...</option>
+          </select>
+          <span class="year-month-sep">月</span>
+        </div>
+      </div>
+
+      <div class="input-group">
         <label for="workDir">工作目录（Excel文件所在目录）</label>
         <div class="input-row">
           <input type="text" id="workDir" placeholder="选择包含 .xls/.xlsx 文件的目录..." readonly>
@@ -57,7 +71,7 @@
         <button id="btnClearLog" class="btn-clear">清空</button>
       </div>
       <div id="logArea" class="log-area">
-        <div class="log-entry log-info">就绪，请选择工作目录和输出目录后点击"开始处理"。</div>
+        <div class="log-entry log-info">就绪，请选择年月和工作目录后点击"开始处理"。</div>
       </div>
     </section>
   </div>
