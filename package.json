@@ -1,6 +1,6 @@
 {
-  "name": "retailsalesshort-electron",
-  "version": "1.0.0",
+  "name": "retailsalesshort-desktop",
+  "version": "2.0.0",
   "description": "湖北区域每日网上下载出库汇总工具",
   "main": "dist/main/main.js",
   "scripts": {
