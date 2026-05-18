@@ -1,0 +1,23 @@
+1、需要检测输出目录"H:\0、工作\0、每日纯销统计\实时下载流向数据"是否存在，如果不存在停止后续工作
+2、打开Excel文件，路径是H:\0、工作\0、每日纯销统计\☆☆纯销统计基表.xlsx
+3、在程序界面工作目录的上方提供年月的下拉框供用户选择，XXXX年+XX月
+4、根据第三步用户的选择，生成的拼接数据为XX年XX月(如果用户选择2025年11月，拼接数据为25年11月；如果用户选择2026年3月，则拼接数据为26年03月)。这一步至关重要，假设拼接数据为XX年XX月，打开H:\0、工作\0、每日纯销统计\XX年XX月\湖北纯销每日统计XX年XX月.xlsx
+5、工作目录初始值为：当前用户的Downloads目录；输出目录初始值为：H:\0、工作\0、每日纯销统计\实时下载流向数据
+6、点击开始处理按钮后得到总行数max_line(max_line需要≥2)，分2步执行：
+	1）将汇总好的数据输出为xlsx文件，输出路径为输出目录，命名规范不变
+	2）将汇总数据粘贴到H:\0、工作\0、每日纯销统计\XX年XX月\湖北纯销每日统计XX年XX月.xlsx内sheet名为纯销明细的工作表的A-G列中
+	3）开始自动填充公式，假设当前行为j(2≤j≤max_line)行，那么
+		H列j行的公式为=IF(ISBLANK(Cj),0,IF(ISERROR(Uj*Gj/Mj*Oj),0,Uj*Gj/Mj*Oj))；
+		I列j行的公式为=IF(ISBLANK(Fj),"",XLOOKUP(Fj,[☆☆纯销统计基表.xlsx]终端单位与区域归属!A:A,[☆☆纯销统计基表.xlsx]终端单位与区域归属!D:D,"错误"))；
+		J列j行的公式为=IF(ISBLANK(Fj),"",XLOOKUP(Fj,[☆☆纯销统计基表.xlsx]终端单位与区域归属!A:A,[☆☆纯销统计基表.xlsx]终端单位与区域归属!C:C,"错误"))；
+		K列j行的公式为=IF(ISBLANK(Cj),"",XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!E:E,""))；
+		L列j行的公式为=IF(ISBLANK(Cj),"",XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!F:F,""))；
+		M列j行的公式为=IF(ISBLANK(Cj),0,XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!G:G,0))；
+		N列j行的公式为=IF(ISBLANK(Cj),"",XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!I:I,0))；
+		O列j行的公式为=IF(ISBLANK(Cj),0,XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!H:H,0))；
+		P列j行的公式为=IF(ISBLANK(Cj),0,IF(ISERROR(Uj*Gj/Mj),0,Uj*Gj/Mj))；
+		Q列j行的公式为=IF(ISBLANK(Cj),0,IF(ISERROR(Uj*Gj/Mj*Oj/10000),0,Uj*Gj/Mj*Oj/10000))；
+		R列j行的公式为=IF(ISBLANK(Cj),0,XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!J:J,0))；
+		S列j行的公式为=IF(ISBLANK(Cj),0,IF(ISERROR(Uj*Gj/Mj),0,Uj*Gj/Mj))*IF(ISBLANK(Cj),0,XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!K:K,0))；
+		T列j行的公式为=IF(OR(Kj="错误",Bj>(TODAY()-1),Jj="其他",AND(Bj>DATE(2026,2,28),Rj="川倍清")),"否",IFERROR(XLOOKUP(Fj&Rj,[☆☆纯销统计基表.xlsx]录入明细整理!D:D&[☆☆纯销统计基表.xlsx]录入明细整理!E:E,[☆☆纯销统计基表.xlsx]录入明细整理!F:F),"是"))；
+		U列j行的公式为=IF(ISBLANK(Cj),"",XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!L:L,""))；
