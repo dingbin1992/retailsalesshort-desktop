@@ -41,6 +41,9 @@ export interface ProcessingResult {
   totalRows: number;
   processedRows: number;
   summaryFilePath: string;
+  targetFilePath: string;
+  baseTablePath: string;
+  baseDir: string;
   unmatchedFiles: string[];
   errors: string[];
 }

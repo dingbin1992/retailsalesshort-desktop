@@ -21,3 +21,4 @@
 		S列j行的公式为=IF(ISBLANK(Cj),0,IF(ISERROR(Uj*Gj/Mj),0,Uj*Gj/Mj))*IF(ISBLANK(Cj),0,XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!K:K,0))；
 		T列j行的公式为=IF(OR(Kj="错误",Bj>(TODAY()-1),Jj="其他",AND(Bj>DATE(2026,2,28),Rj="川倍清")),"否",IFERROR(XLOOKUP(Fj&Rj,[☆☆纯销统计基表.xlsx]录入明细整理!D:D&[☆☆纯销统计基表.xlsx]录入明细整理!E:E,[☆☆纯销统计基表.xlsx]录入明细整理!F:F),"是"))；
 		U列j行的公式为=IF(ISBLANK(Cj),"",XLOOKUP(Cj&Dj,[☆☆纯销统计基表.xlsx]匹配基表!A:A&[☆☆纯销统计基表.xlsx]匹配基表!B:B,[☆☆纯销统计基表.xlsx]匹配基表!L:L,""))；
+7、处理完成后必须打开Excel文件(文件路径是H:\0、工作\0、每日纯销统计\☆☆纯销统计基表.xlsx)以及打开目录H:\0、工作\0、每日纯销统计

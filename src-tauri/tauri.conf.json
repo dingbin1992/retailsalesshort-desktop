@@ -1,0 +1,50 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "流向整理工具",
+  "version": "3.0.0",
+  "identifier": "com.retailsalesshort.desktop",
+  "build": {
+    "frontendDist": "../src/renderer",
+    "devUrl": "http://localhost:1420"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "流向整理工具",
+        "width": 900,
+        "height": 650,
+        "minWidth": 700,
+        "minHeight": 500,
+        "resizable": true,
+        "fullscreen": false,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../config/patterns.json": "config/patterns.json",
+      "../dist/processing/cli.js": "dist/processing/cli.js"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "installerIcon": "icons/icon.ico",
+        "languages": ["English", "SimpChinese"]
+      }
+    }
+  }
+}

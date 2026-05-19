@@ -3,3 +3,5 @@ dist/
 release/
 *.js.map
 .claude/
+src-tauri/target/
+node-portable/

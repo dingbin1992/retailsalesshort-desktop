@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
-import { PatternDefinition, ProgressEvent, ProcessingResult } from '../shared/types';
+import { PatternDefinition, ProgressEvent, ProcessingResult } from './types';
 
 const BASE_TABLE_PATH = 'H:\\0、工作\\0、每日纯销统计\\☆☆纯销统计基表.xlsx';
 const BASE_DIR = 'H:\\0、工作\\0、每日纯销统计';
@@ -477,8 +477,6 @@ export class ExcelProcessor {
     this.errors = [];
     this.allData = [];
 
-    const { shell } = await import('electron');
-
     // 步骤1+2：前置校验
     this.emit({ type: 'scanning', message: '正在验证前置条件...' });
     try {
@@ -494,6 +492,9 @@ export class ExcelProcessor {
         totalRows: 0,
         processedRows: 0,
         summaryFilePath: '',
+        targetFilePath: '',
+        baseTablePath: BASE_TABLE_PATH,
+        baseDir: BASE_DIR,
         unmatchedFiles: [],
         errors: [e.message],
       };
@@ -518,6 +519,10 @@ export class ExcelProcessor {
       if (this.allData.length > 0) {
         await this.writeToTargetTable();
       }
+      let targetPath = '';
+      if (this.allData.length > 0) {
+        targetPath = this.buildTargetTablePath();
+      }
       return {
         success: true,
         totalFiles: 0,
@@ -525,6 +530,8 @@ export class ExcelProcessor {
         totalRows: 0,
         processedRows: 0,
         summaryFilePath: '',
+        targetFilePath: targetPath,
+        baseDir: BASE_DIR,
         unmatchedFiles: [],
         errors: [],
       };
@@ -618,8 +625,6 @@ export class ExcelProcessor {
     // 步骤6.2+6.3：写入目标文件（汇总数据 + 公式）
     if (this.allData.length > 0) {
       try {
-        // 先打开基表文件，确保Excel能解析公式中的外部引用
-        shell.openPath(BASE_TABLE_PATH);
         await this.writeToTargetTable();
       } catch (e: any) {
         this.errors.push(`写入目标文件失败: ${e.message}`);
@@ -630,10 +635,9 @@ export class ExcelProcessor {
     // 清理工作目录中的已处理文件
     await this.cleanupWorkDir();
 
-    // 打开统计目录
-    shell.openPath(BASE_DIR);
-
     this.emit({ type: 'complete', message: '流向整理完成！' });
+
+    const finalTargetPath = this.allData.length > 0 ? this.buildTargetTablePath() : '';
 
     return {
       success: this.errors.length === 0 && this.unmatchedFiles.length === 0,
@@ -642,6 +646,9 @@ export class ExcelProcessor {
       totalRows: this.totalRows,
       processedRows: this.processedRows,
       summaryFilePath: this.summaryFilePath,
+      targetFilePath: finalTargetPath,
+      baseTablePath: BASE_TABLE_PATH,
+      baseDir: BASE_DIR,
       unmatchedFiles: this.unmatchedFiles,
       errors: this.errors,
     };

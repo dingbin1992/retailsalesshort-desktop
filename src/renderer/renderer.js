@@ -93,33 +93,18 @@ async function init() {
     selectMonth.appendChild(optionEl);
   }
 
-  // 恢复上次使用的目录
-  const savedWorkDir = localStorage.getItem('workDir');
-  const savedOutputDir = localStorage.getItem('outputDir');
-  const savedYear = localStorage.getItem('selectYear');
-  const savedMonth = localStorage.getItem('selectMonth');
-
-  if (savedWorkDir) workDirInput.value = savedWorkDir;
-  if (savedOutputDir) outputDirInput.value = savedOutputDir;
-  if (savedYear) selectYear.value = savedYear;
-  if (savedMonth) selectMonth.value = savedMonth;
-
-  // 使用系统默认值填充未保存的字段（需求第5点）
+  // 使用系统默认值填充
   try {
     const defaults = await window.electronAPI.getDefaultDirectories();
-    if (!savedWorkDir) workDirInput.value = defaults.workDir;
-    if (!savedOutputDir) outputDirInput.value = defaults.outputDir;
+    workDirInput.value = defaults.workDir;
+    outputDirInput.value = defaults.outputDir;
   } catch (e) {
     // 忽略
   }
 
-  // 如果没有保存的年月，默认选中当前年月
-  if (!savedYear) {
-    selectYear.value = currentYear;
-  }
-  if (!savedMonth) {
-    selectMonth.value = now.getMonth() + 1;
-  }
+  // 默认选中当前年月
+  selectYear.value = currentYear;
+  selectMonth.value = now.getMonth() + 1;
 }
 
 // ========== 事件处理 ==========
@@ -128,7 +113,6 @@ btnBrowseWork.addEventListener('click', async () => {
   const dir = await window.electronAPI.selectDirectory();
   if (dir) {
     workDirInput.value = dir;
-    localStorage.setItem('workDir', dir);
   }
 });
 
@@ -136,16 +120,15 @@ btnBrowseOutput.addEventListener('click', async () => {
   const dir = await window.electronAPI.selectDirectory();
   if (dir) {
     outputDirInput.value = dir;
-    localStorage.setItem('outputDir', dir);
   }
 });
 
 selectYear.addEventListener('change', () => {
-  if (selectYear.value) localStorage.setItem('selectYear', selectYear.value);
+  // 年月选择变更
 });
 
 selectMonth.addEventListener('change', () => {
-  if (selectMonth.value) localStorage.setItem('selectMonth', selectMonth.value);
+  // 年月选择变更
 });
 
 btnClearLog.addEventListener('click', () => {
@@ -158,7 +141,8 @@ btnEditConfig.addEventListener('click', async () => {
   try {
     await window.electronAPI.openConfigFile();
   } catch (e) {
-    log('打开配置文件失败: ' + e.message, 'error');
+    var errMsg = typeof e === 'string' ? e : (e.message || String(e));
+    log('打开配置文件失败: ' + errMsg, 'error');
   }
 });
 
@@ -184,12 +168,6 @@ btnProcess.addEventListener('click', async () => {
   }
 
   unmatchedSection.style.display = 'none';
-
-  // 保存选择
-  localStorage.setItem('workDir', workDir);
-  localStorage.setItem('outputDir', outputDir);
-  localStorage.setItem('selectYear', year);
-  localStorage.setItem('selectMonth', month);
 
   setUIEnabled(false);
   updateProgress(0, '准备...');
@@ -254,7 +232,8 @@ btnProcess.addEventListener('click', async () => {
       result.errors.forEach(function(e) { log('  - ' + e, 'error'); });
     }
   } catch (err) {
-    log('处理异常: ' + err.message, 'error');
+    var errMsg = typeof err === 'string' ? err : (err.message || String(err));
+    log('处理异常: ' + errMsg, 'error');
     hideProgress();
   } finally {
     setUIEnabled(true);

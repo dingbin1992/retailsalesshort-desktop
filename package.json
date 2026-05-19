@@ -1,23 +1,22 @@
 {
   "name": "retailsalesshort-desktop",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "湖北区域每日网上下载出库汇总工具",
-  "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc && node scripts/copy-renderer.js",
-    "start": "npm run build && electron .",
-    "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win"
+    "build": "esbuild src/processing/cli.ts --bundle --platform=node --target=node18 --outfile=dist/processing/cli.js && node scripts/copy-tauri-api.js",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "download:node": "node scripts/download-node.js"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
     "@types/node": "^25.8.0",
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0",
-    "sharp": "^0.34.5",
+    "esbuild": "^0.28.0",
     "typescript": "^5.6.0"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
     "exceljs": "^4.4.0",
     "xlsx": "^0.18.5"
   }
