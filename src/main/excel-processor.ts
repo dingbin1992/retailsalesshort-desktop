@@ -436,6 +436,38 @@ export class ExcelProcessor {
     this.emit({ type: 'writing', message: `目标文件写入完成: ${targetPath}` });
   }
 
+  // ========== 清理工作目录 ==========
+
+  async cleanupWorkDir(): Promise<void> {
+    const excelFiles: string[] = [];
+    if (fs.existsSync(this.workDir)) {
+      for (const ext of ['.xls', '.xlsx']) {
+        const files = fs.readdirSync(this.workDir).filter(f =>
+          f.toLowerCase().endsWith(ext)
+        ).map(f => path.join(this.workDir, f));
+        excelFiles.push(...files);
+      }
+    }
+
+    if (excelFiles.length === 0) {
+      this.emit({ type: 'cleaning', message: '工作目录中没有需要清理的Excel文件' });
+      return;
+    }
+
+    this.emit({ type: 'cleaning', message: `正在清理工作目录，共 ${excelFiles.length} 个文件...` });
+
+    for (const filePath of excelFiles) {
+      try {
+        fs.unlinkSync(filePath);
+        this.emit({ type: 'cleaning', message: `已删除: ${path.basename(filePath)}` });
+      } catch (e: any) {
+        this.emit({ type: 'error', message: `删除文件失败: ${path.basename(filePath)} - ${e.message}` });
+      }
+    }
+
+    this.emit({ type: 'cleaning', message: '工作目录清理完成' });
+  }
+
   // ========== 主处理流程 ==========
 
   async run(): Promise<ProcessingResult> {
@@ -594,6 +626,9 @@ export class ExcelProcessor {
         this.emit({ type: 'error', message: `写入目标文件失败: ${e.message}` });
       }
     }
+
+    // 清理工作目录中的已处理文件
+    await this.cleanupWorkDir();
 
     // 打开统计目录
     shell.openPath(BASE_DIR);

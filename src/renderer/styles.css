@@ -19,10 +19,10 @@
   --radius: 12px;
   --shadow: 0 2px 8px rgba(124, 58, 237, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
   --font: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
-  --font-size-sm: 14px;
-  --font-size-base: 15px;
-  --font-size-lg: 18px;
-  --font-size-xl: 26px;
+  --font-size-sm: 18px;
+  --font-size-base: 19px;
+  --font-size-lg: 23px;
+  --font-size-xl: 33px;
 }
 
 /* 全局重置 */
@@ -306,7 +306,7 @@ header .subtitle {
 }
 
 .unmatched-icon {
-  font-size: 20px;
+  font-size: 25px;
 }
 
 .unmatched-list {
@@ -369,7 +369,7 @@ header .subtitle {
   background: var(--log-bg);
   padding: 14px 18px;
   font-family: "Cascadia Code", "Fira Code", "Consolas", "Microsoft YaHei", monospace;
-  font-size: 13px;
+  font-size: 16px;
   line-height: 1.8;
 }
 

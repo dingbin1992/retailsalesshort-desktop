@@ -11,6 +11,7 @@
     "dist:win": "npm run build && electron-builder --win"
   },
   "devDependencies": {
+    "@types/node": "^25.8.0",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
     "sharp": "^0.34.5",
