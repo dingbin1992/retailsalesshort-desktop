@@ -187,9 +187,14 @@ fn find_node_exe() -> PathBuf {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
         .unwrap_or_default();
 
+    #[cfg(target_os = "windows")]
+    let node_name = "node.exe";
+    #[cfg(not(target_os = "windows"))]
+    let node_name = "node";
+
     let candidates = vec![
-        exe_dir.join("node-portable").join("node.exe"),
-        PathBuf::from("node-portable").join("node.exe"),
+        exe_dir.join("node-portable").join(node_name),
+        PathBuf::from("node-portable").join(node_name),
     ];
 
     for p in &candidates {
@@ -198,7 +203,6 @@ fn find_node_exe() -> PathBuf {
         }
     }
 
-    // 回退：使用系统 PATH 中的 node
     PathBuf::from("node")
 }
 
