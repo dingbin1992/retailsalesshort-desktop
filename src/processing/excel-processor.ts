@@ -125,8 +125,12 @@ export class ExcelProcessor {
   // ========== 统计行数 ==========
 
   countFileRows(sheet: XLSX.WorkSheet): number {
-    const data: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
-    return Math.max(0, data.length - 1);
+    const ref = sheet['!ref'];
+    if (ref) {
+      const range = XLSX.utils.decode_range(ref);
+      return Math.max(0, range.e.r - range.s.r);
+    }
+    return 0;
   }
 
   // ========== 日期标准化 ==========
@@ -168,61 +172,56 @@ export class ExcelProcessor {
   // ========== 处理单个工作表 ==========
 
   processWorksheet(sheet: XLSX.WorkSheet, pattern: PatternDefinition): any[][] {
-    const allData: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
-    if (allData.length <= 1) {
-      return [];
-    }
+    const ref = sheet['!ref'];
+    if (!ref) return [];
+
+    const range = XLSX.utils.decode_range(ref);
+    // 无数据行（只有表头或空表）
+    if (range.e.r <= range.s.r) return [];
 
     const mapping = pattern.mapping;
     const result: any[][] = [];
+    const srcCols = Object.keys(mapping).map(Number);
 
-    const batchSize = 1000;
-    const dataRows = allData.slice(1);
-
-    for (let startIdx = 0; startIdx < dataRows.length; startIdx += batchSize) {
-      const batch = dataRows.slice(startIdx, startIdx + batchSize);
-
-      for (const rowData of batch) {
-        if (!Array.isArray(rowData) || rowData === null) {
-          continue;
-        }
-
-        if (rowData.every((v: any) => v === null || v === undefined || v === '')) {
-          continue;
-        }
-
-        const newRow: any[] = new Array(6).fill(null);
-        for (const srcColStr of Object.keys(mapping)) {
-          const srcCol = parseInt(srcColStr, 10);
-          const dstCol = mapping[srcCol];
-          let value = srcCol - 1 < rowData.length ? rowData[srcCol - 1] : null;
-
-          if (dstCol === 1) {
-            value = this.normalizeDate(value, pattern.name, srcCol);
-          } else if (typeof value === 'string') {
-            if (pattern.name === 'pattern8' && srcCol === 2) {
-              if (value.includes(' ')) {
-                value = value.split(' ')[0];
-              }
-            } else {
-              value = value.replace(/ /g, '');
-            }
-          }
-
-          newRow[dstCol - 1] = value;
-        }
-
-        const qty = newRow[5];
-        if (qty !== null && qty !== undefined && qty !== '') {
-          const num = Number(qty);
-          if (!isNaN(num)) {
-            newRow[5] = num;
-          }
-        }
-
-        newRow.unshift(pattern.businessUnit);
-        result.push(newRow);
+    // 逐行读取，避免 sheet_to_json 创建完整副本占用额外内存
+    for (let r = range.s.r + 1; r <= range.e.r; r++) {
+      let hasData = false;
+      const rowVals: any[] = [];
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+        const v = cell ? cell.v : undefined;
+        rowVals.push(v !== undefined ? v : null);
+        if (v !== undefined && v !== null && v !== '') hasData = true;
       }
+
+      if (!hasData) continue;
+
+      const newRow: any[] = new Array(6).fill(null);
+      for (const srcCol of srcCols) {
+        const dstCol = mapping[srcCol];
+        let value = srcCol - 1 < rowVals.length ? rowVals[srcCol - 1] : null;
+
+        if (dstCol === 1) {
+          value = this.normalizeDate(value, pattern.name, srcCol);
+        } else if (typeof value === 'string') {
+          if (pattern.name === 'pattern8' && srcCol === 2) {
+            if (value.includes(' ')) value = value.split(' ')[0];
+          } else {
+            value = value.replace(/ /g, '');
+          }
+        }
+
+        newRow[dstCol - 1] = value;
+      }
+
+      const qty = newRow[5];
+      if (qty !== null && qty !== undefined && qty !== '') {
+        const num = Number(qty);
+        if (!isNaN(num)) newRow[5] = num;
+      }
+
+      newRow.unshift(pattern.businessUnit);
+      result.push(newRow);
     }
 
     this.processedRows += result.length;
@@ -253,8 +252,12 @@ export class ExcelProcessor {
       }
     }
 
-    await this.summaryWb.xlsx.writeFile(this.summaryFilePath);
     this.emit({ type: 'writing', message: `已追加 ${result.length} 行数据到汇总文件` });
+  }
+
+  /** 保存汇总文件到磁盘 */
+  async saveSummaryFile(): Promise<void> {
+    await this.summaryWb.xlsx.writeFile(this.summaryFilePath);
   }
 
   // ========== 日期转Excel日期值 ==========
@@ -537,10 +540,7 @@ export class ExcelProcessor {
       };
     }
 
-    // 创建汇总文件
-    await this.createSummaryFile();
-
-    // 统计总行数
+    // 统计总行数（使用sheet范围，避免加载全部数据）
     this.emit({ type: 'scanning', message: '正在统计文件行数...' });
     for (const filePath of excelFiles) {
       try {
@@ -556,6 +556,9 @@ export class ExcelProcessor {
     }
 
     this.emit({ type: 'scanning', message: `所有文件共包含 ${this.totalRows} 行数据` });
+
+    // 预先创建汇总文件，处理过程中增量写入
+    await this.createSummaryFile();
 
     // 串行处理文件，收集所有数据
     let processedFiles = 0;
@@ -574,7 +577,16 @@ export class ExcelProcessor {
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName] as XLSX.WorkSheet;
 
-        const headerRow: any[] = (XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null }) as any[][])[0] || [];
+        // 仅读取表头行，避免加载全部数据
+        const sheetRef = sheet['!ref'];
+        let headerRow: any[] = [];
+        if (sheetRef) {
+          const hdrRange = XLSX.utils.decode_range(sheetRef);
+          for (let c = hdrRange.s.c; c <= hdrRange.e.c; c++) {
+            const cell = sheet[XLSX.utils.encode_cell({ r: hdrRange.s.r, c })];
+            headerRow.push(cell ? cell.v : null);
+          }
+        }
         const headers: Record<number, string> = {};
         for (let col = 1; col <= headerRow.length; col++) {
           const val = headerRow[col - 1];
@@ -619,21 +631,39 @@ export class ExcelProcessor {
       this.emit({ type: 'processing', message: `处理率: ${rate}%` });
     }
 
-    // 格式化汇总文件的日期列
-    await this.formatSummaryDates();
+    // 仅全部处理成功时保存汇总文件并格式化日期
+    const allSuccess = this.errors.length === 0 && this.unmatchedFiles.length === 0;
 
-    // 步骤6.2+6.3：写入目标文件（汇总数据 + 公式）
-    if (this.allData.length > 0) {
-      try {
-        await this.writeToTargetTable();
-      } catch (e: any) {
-        this.errors.push(`写入目标文件失败: ${e.message}`);
-        this.emit({ type: 'error', message: `写入目标文件失败: ${e.message}` });
+    if (allSuccess) {
+      if (this.allData.length > 0) {
+        await this.saveSummaryFile();
+        await this.formatSummaryDates();
       }
+      // 步骤6.2+6.3：写入目标文件（汇总数据 + 公式）
+      if (this.allData.length > 0) {
+        try {
+          await this.writeToTargetTable();
+        } catch (e: any) {
+          this.errors.push(`写入目标文件失败: ${e.message}`);
+          this.emit({ type: 'error', message: `写入目标文件失败: ${e.message}` });
+        }
+      }
+      // 成功时清理工作目录
+      await this.cleanupWorkDir();
+    } else {
+      // 处理失败，删除汇总文件
+      if (this.summaryFilePath) {
+        try {
+          fs.unlinkSync(this.summaryFilePath);
+          this.emit({ type: 'cleaning', message: `处理未完全成功，已删除汇总文件: ${path.basename(this.summaryFilePath)}` });
+        } catch (_) { /* 忽略删除失败 */ }
+        this.summaryFilePath = '';
+      }
+      const reasons: string[] = [];
+      if (this.errors.length > 0) reasons.push(`${this.errors.length} 个错误`);
+      if (this.unmatchedFiles.length > 0) reasons.push(`${this.unmatchedFiles.length} 个文件未匹配到格式`);
+      this.emit({ type: 'cleaning', message: `处理未完全成功（${reasons.join('，')}），跳过清理工作目录，保留原始文件以便排查` });
     }
-
-    // 清理工作目录中的已处理文件
-    await this.cleanupWorkDir();
 
     this.emit({ type: 'complete', message: '流向整理完成！' });
 
