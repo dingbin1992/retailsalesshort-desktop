@@ -7,75 +7,126 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>流向整理工具</h1>
-      <p class="subtitle">每日网上下载出库汇总</p>
-    </header>
 
-    <section class="config-panel">
-      <div class="input-group">
-        <label for="selectYear">选择年月</label>
-        <div class="input-row year-month-row">
-          <select id="selectYear" class="year-select">
-            <option value="">请选择年份...</option>
-          </select>
-          <span class="year-month-sep">年</span>
-          <select id="selectMonth" class="month-select">
-            <option value="">请选择月份...</option>
-          </select>
-          <span class="year-month-sep">月</span>
-        </div>
+  <!-- ========== 组件模板 ========== -->
+  <template id="year-month-picker-template">
+    <div class="input-group">
+      <label>选择年月</label>
+      <div class="input-row year-month-row">
+        <select v-model="selectedYear" class="year-select" :disabled="disabled">
+          <option value="">请选择年份...</option>
+          <option v-for="y in years" :key="y" :value="y">{{ y }}年</option>
+        </select>
+        <span class="year-month-sep">年</span>
+        <select v-model="selectedMonth" class="month-select" :disabled="disabled">
+          <option value="">请选择月份...</option>
+          <option v-for="m in months" :key="m" :value="m">{{ m }}月</option>
+        </select>
+        <span class="year-month-sep">月</span>
       </div>
+    </div>
+  </template>
 
-      <div class="input-group">
-        <label for="workDir">工作目录（Excel文件所在目录）</label>
-        <div class="input-row">
-          <input type="text" id="workDir" placeholder="选择包含 .xls/.xlsx 文件的目录..." readonly>
-          <button id="btnBrowseWork" class="btn-browse">浏览...</button>
-        </div>
+  <template id="directory-picker-template">
+    <div class="input-group">
+      <label>{{ label }}</label>
+      <div class="input-row">
+        <input type="text" :value="modelValue" :placeholder="placeholder" readonly :disabled="disabled">
+        <button class="btn-browse" :disabled="disabled" @click="browse">浏览...</button>
       </div>
+    </div>
+  </template>
 
-      <div class="input-group">
-        <label for="outputDir">输出目录（汇总文件保存位置）</label>
-        <div class="input-row">
-          <input type="text" id="outputDir" placeholder="选择汇总文件输出目录..." readonly>
-          <button id="btnBrowseOutput" class="btn-browse">浏览...</button>
-        </div>
-      </div>
-    </section>
-
+  <template id="action-panel-template">
     <section class="action-panel">
-      <button id="btnProcess" class="btn-process">开始处理</button>
-      <button id="btnEditConfig" class="btn-edit-config">修改配置</button>
-      <div id="progressContainer" class="progress-container" style="display: none;">
+      <button class="btn-process" :disabled="isProcessing" @click="$emit('start')">开始处理</button>
+      <button class="btn-edit-config" :disabled="isProcessing" @click="$emit('editConfig')">修改配置</button>
+      <div class="progress-container" v-show="progress.visible">
         <div class="progress-bar">
-          <div id="progressFill" class="progress-fill"></div>
+          <div class="progress-fill" :style="{ width: progress.percent + '%' }"></div>
         </div>
-        <span id="progressText" class="progress-text">0%</span>
+        <span class="progress-text">{{ progress.text }}</span>
       </div>
     </section>
+  </template>
 
-    <section id="unmatchedSection" class="unmatched-panel" style="display: none;">
+  <template id="unmatched-panel-template">
+    <section class="unmatched-panel" v-show="visible && files.length">
       <div class="unmatched-header">
-        <span class="unmatched-icon">⚠</span>
+        <span class="unmatched-icon">&#9888;</span>
         <span>以下文件格式未识别，请修改配置后重试</span>
       </div>
-      <div id="unmatchedList" class="unmatched-list"></div>
+      <div class="unmatched-list">
+        <div v-for="(f, idx) in files" :key="idx" class="unmatched-item">{{ f }}</div>
+      </div>
     </section>
+  </template>
 
+  <template id="log-panel-template">
     <section class="log-panel">
       <div class="log-header">
         <span>处理日志</span>
-        <button id="btnClearLog" class="btn-clear">清空</button>
+        <button class="btn-clear" @click="$emit('clear')">清空</button>
       </div>
-      <div id="logArea" class="log-area">
-        <div class="log-entry log-info">就绪，请选择年月和工作目录后点击"开始处理"。</div>
+      <div class="log-area" ref="logAreaRef">
+        <div v-for="(entry, idx) in entries" :key="idx" :class="'log-entry log-' + entry.type">
+          [{{ entry.time }}] {{ entry.message }}
+        </div>
       </div>
     </section>
+  </template>
+
+  <!-- ========== 应用容器 ========== -->
+  <div id="app">
+    <div class="container">
+      <header>
+        <h1>流向整理工具</h1>
+        <p class="subtitle">每日网上下载出库汇总</p>
+      </header>
+
+      <section class="config-panel">
+        <year-month-picker :disabled="isProcessing" ref="yearMonthPickerRef"></year-month-picker>
+
+        <directory-picker
+          label="工作目录（Excel文件所在目录）"
+          :disabled="isProcessing"
+          v-model="workDir"
+          placeholder="选择包含 .xls/.xlsx 文件的目录...">
+        </directory-picker>
+
+        <directory-picker
+          label="输出目录（汇总文件保存位置）"
+          :disabled="isProcessing"
+          v-model="outputDir"
+          placeholder="选择汇总文件输出目录...">
+        </directory-picker>
+      </section>
+
+      <action-panel
+        :is-processing="isProcessing"
+        :progress="progress"
+        @start="handleStartProcess"
+        @edit-config="handleEditConfig">
+      </action-panel>
+
+      <unmatched-panel
+        :files="unmatchedFiles"
+        :visible="unmatchedFiles.length > 0">
+      </unmatched-panel>
+
+      <log-panel
+        :entries="logEntries"
+        @clear="clearLog">
+      </log-panel>
+    </div>
   </div>
 
+  <!-- ===== 脚本加载（严格按顺序） ===== -->
+  <!-- 1. Vue 3 全局构建 -->
+  <script src="vue.global.prod.js"></script>
+  <!-- 2. Tauri API 桥接（ES module，挂载 window.electronAPI） -->
   <script type="module" src="tauri-bridge.js"></script>
-  <script defer src="renderer.js"></script>
+  <!-- 3. 应用入口（ES module，确保 tauri-bridge 先执行） -->
+  <script type="module" src="app.js"></script>
 </body>
 </html>

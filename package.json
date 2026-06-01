@@ -1,6 +1,6 @@
 {
   "name": "retailsalesshort-desktop",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "湖北区域每日网上下载出库汇总工具",
   "scripts": {
     "build": "esbuild src/processing/cli.ts --bundle --platform=node --target=node18 --outfile=dist/processing/cli.js && node scripts/copy-tauri-api.js",
