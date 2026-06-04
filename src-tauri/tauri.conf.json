@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "流向整理工具",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "identifier": "com.retailsalesshort.desktop",
   "build": {
     "frontendDist": "../src/renderer",
@@ -42,7 +42,8 @@
     ],
     "resources": {
       "../config/patterns.json": "config/patterns.json",
-      "../dist/processing/cli.js": "dist/processing/cli.js"
+      "../dist/processing/cli.js": "dist/processing/cli.js",
+      "../dist/processing/read-headers.js": "dist/processing/read-headers.js"
     },
     "windows": {
       "nsis": {

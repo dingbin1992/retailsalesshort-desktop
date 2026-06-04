@@ -11,7 +11,10 @@
   <!-- ========== 组件模板 ========== -->
   <template id="year-month-picker-template">
     <div class="input-group">
-      <label>选择年月</label>
+      <div class="label-row">
+        <label>选择年月</label>
+        <span class="sys-time">{{ nowTime }}</span>
+      </div>
       <div class="input-row year-month-row">
         <select v-model="selectedYear" class="year-select" :disabled="disabled">
           <option value="">请选择年份...</option>
@@ -50,16 +53,97 @@
     </section>
   </template>
 
-  <template id="unmatched-panel-template">
-    <section class="unmatched-panel" v-show="visible && files.length">
-      <div class="unmatched-header">
-        <span class="unmatched-icon">&#9888;</span>
-        <span>以下文件格式未识别，请修改配置后重试</span>
+
+  <template id="user-add-form-template">
+    <div class="modal-overlay" @click.self="$emit('cancel')">
+      <div class="modal-dialog">
+        <div class="modal-header">
+          <h2>新增格式规则</h2>
+          <button class="modal-close" @click="$emit('cancel')">&times;</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- 商业单位名称 -->
+          <div class="form-group">
+            <label>商业单位名称</label>
+            <input type="text" v-model="businessUnit" class="form-input" placeholder="请输入商业单位全称...">
+            <span v-if="loadingHeaders" class="form-hint">正在读取表头...</span>
+          </div>
+
+          <!-- 读取错误提示 -->
+          <div v-if="readError" class="form-group">
+            <div class="read-error">{{ readError }}</div>
+          </div>
+
+          <!-- 表头映射：6 个标准字段，每行用下拉框选 Excel 列 -->
+          <div class="form-group">
+            <label>原表内表头名称（选择每个标准字段对应的 Excel 列）</label>
+            <div class="mapping-table">
+              <div class="mapping-row mapping-row-header">
+                <span class="mapping-label">标准字段</span>
+                <span class="mapping-select-col">原表内表头名称</span>
+                <span class="mapping-format-col">格式要求</span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">日期</span>
+                <select v-model="mapDate" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">
+                  <label class="checkbox-label"><input type="checkbox" v-model="dateShort"> 短日期</label>
+                </span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">品种</span>
+                <select v-model="mapProduct" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">常规</span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">规格</span>
+                <select v-model="mapSpec" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">常规</span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">批号</span>
+                <select v-model="mapBatch" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">常规</span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">流向单位</span>
+                <select v-model="mapUnit" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">常规</span>
+              </div>
+              <div class="mapping-row">
+                <span class="mapping-label">数量</span>
+                <select v-model="mapQuantity" class="form-select mapping-select">
+                  <option value="">--- 不映射 ---</option>
+                  <option v-for="(h, hi) in excelHeaders" :key="hi" :value="hi + 1">{{ h }}</option>
+                </select>
+                <span class="mapping-format">数字</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="$emit('cancel')">取消</button>
+          <button class="btn-submit" :disabled="!canSubmit" @click="$emit('submit', formData)">提交</button>
+        </div>
       </div>
-      <div class="unmatched-list">
-        <div v-for="(f, idx) in files" :key="idx" class="unmatched-item">{{ f }}</div>
-      </div>
-    </section>
+    </div>
   </template>
 
   <template id="log-panel-template">
@@ -109,10 +193,29 @@
         @edit-config="handleEditConfig">
       </action-panel>
 
-      <unmatched-panel
+      <section class="unmatched-panel" v-if="hasUnmatched">
+        <div class="unmatched-header">
+          <span class="unmatched-icon">&#9888;</span>
+          <span>以下文件格式未识别，请为每个文件点击"用户自新增"添加格式规则</span>
+        </div>
+        <div class="unmatched-list">
+          <div v-for="(f, idx) in unmatchedFiles" :key="idx" class="unmatched-item-row">
+            <span class="unmatched-item">{{ f }}</span>
+            <button class="btn-user-add" @click="handleUserAdd(f)">用户自新增</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 用户自新增表单对话框 -->
+      <user-add-form
+        v-if="showUserAddForm"
+        ref="userAddFormRef"
         :files="unmatchedFiles"
-        :visible="unmatchedFiles.length > 0">
-      </unmatched-panel>
+        :initial-file="selectedUserFile"
+        :work-dir="workDir"
+        @submit="handleFormSubmit"
+        @cancel="handleCancelForm">
+      </user-add-form>
 
       <log-panel
         :entries="logEntries"

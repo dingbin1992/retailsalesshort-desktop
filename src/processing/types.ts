@@ -1,9 +1,12 @@
 // 格式模式定义（从 patterns.json 加载的结构）
+// 支持两种格式：
+//   旧格式(数字键): headers { "1": "header1", ... }, mapping { "1": 1, ... }
+//   新格式(a-f键):  headers { "a": "header1", ... }, mapping { "a": 1, ... }
 export interface PatternDefinition {
   name: string;
   businessUnit: string;
-  headers: Record<number, string>;
-  mapping: Record<number, number>;
+  headers: Record<string, string>;
+  mapping: Record<string, number>;
   dateFormat?: boolean;
   dateCol?: number;
 }

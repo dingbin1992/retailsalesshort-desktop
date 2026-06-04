@@ -20,6 +20,7 @@ export class ExcelProcessor {
   private unmatchedFiles: string[] = [];
   private errors: string[] = [];
   private allData: any[][] = [];
+  private fileRowCounts: Map<string, number> = new Map();
 
   private onProgress: ((event: ProgressEvent) => void) | null = null;
 
@@ -107,16 +108,43 @@ export class ExcelProcessor {
   getFilePattern(headers: Record<number, string>): PatternDefinition | null {
     for (const pattern of this.patterns) {
       const ph = pattern.headers;
-      let match = true;
-      for (const colStr of Object.keys(ph)) {
-        const col = parseInt(colStr, 10);
-        if (headers[col] !== ph[col]) {
-          match = false;
-          break;
+      const phKeys = Object.keys(ph);
+      if (phKeys.length === 0) continue;
+
+      // 判断格式: 旧格式数字键(列号), 新格式字母键(a-f)
+      const firstKey = phKeys[0];
+      const isNewFormat = isNaN(parseInt(firstKey, 10));
+
+      if (isNewFormat) {
+        // 新格式(a-f): 按文字内容匹配，不依赖列号
+        let match = true;
+        for (const label of phKeys) {
+          const expectedText = ph[label];
+          // 在文件表头中查找匹配的文字
+          let found = false;
+          for (const colStr of Object.keys(headers)) {
+            if (headers[Number(colStr)] === expectedText) {
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            match = false;
+            break;
+          }
         }
-      }
-      if (match) {
-        return pattern;
+        if (match) return pattern;
+      } else {
+        // 旧格式(数字键=列号): 按列号+文字精确匹配
+        let match = true;
+        for (const colStr of phKeys) {
+          const col = parseInt(colStr, 10);
+          if (headers[col] !== ph[colStr]) {
+            match = false;
+            break;
+          }
+        }
+        if (match) return pattern;
       }
     }
     return null;
@@ -126,11 +154,19 @@ export class ExcelProcessor {
 
   countFileRows(sheet: XLSX.WorkSheet): number {
     const ref = sheet['!ref'];
-    if (ref) {
-      const range = XLSX.utils.decode_range(ref);
-      return Math.max(0, range.e.r - range.s.r);
+    if (!ref) return 0;
+    const range = XLSX.utils.decode_range(ref);
+    let count = 0;
+    for (let r = range.s.r + 1; r <= range.e.r; r++) {
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+        if (cell && cell.v !== undefined && cell.v !== null && cell.v !== '') {
+          count++;
+          break;
+        }
+      }
     }
-    return 0;
+    return count;
   }
 
   // ========== 日期标准化 ==========
@@ -138,6 +174,11 @@ export class ExcelProcessor {
   normalizeDate(value: any, patternName: string, srcCol: number): any {
     if (value === null || value === undefined || value === '') {
       return value;
+    }
+
+    // Excel 日期序列号 → 转为 yyyy-mm-dd 字符串
+    if (value instanceof Date) {
+      return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
     }
 
     if (typeof value === 'string') {
@@ -179,9 +220,45 @@ export class ExcelProcessor {
     // 无数据行（只有表头或空表）
     if (range.e.r <= range.s.r) return [];
 
-    const mapping = pattern.mapping;
+    const mKeys = Object.keys(pattern.mapping);
+    if (mKeys.length === 0) return [];
+
+    // 判断新旧格式: 旧格式数字键(列号), 新格式字母键(a-f)
+    const isNewFormat = isNaN(parseInt(mKeys[0], 10));
+
+    // 构建列号→字段号映射
+    const colMapping: Record<number, number> = {};
+
+    if (isNewFormat) {
+      // 新格式: 读取表头行，通过文字匹配找到每列对应哪个字段
+      const fileHeaders: Record<number, string> = {};
+      for (let c = range.s.c; c <= range.e.c; c++) {
+        const cell = sheet[XLSX.utils.encode_cell({ r: range.s.r, c })];
+        const v = cell ? cell.v : null;
+        if (v !== null && v !== undefined && v !== '') {
+          fileHeaders[c + 1] = String(v).trim();
+        }
+      }
+      for (const label of mKeys) {
+        const expectedText = pattern.headers[label];
+        const fieldNum = pattern.mapping[label];
+        for (const colStr of Object.keys(fileHeaders)) {
+          const col = Number(colStr);
+          if (fileHeaders[col] === expectedText) {
+            colMapping[col] = fieldNum;
+            break;
+          }
+        }
+      }
+    } else {
+      // 旧格式: mapping key 本身就是列号
+      for (const key of mKeys) {
+        colMapping[Number(key)] = pattern.mapping[key];
+      }
+    }
+
     const result: any[][] = [];
-    const srcCols = Object.keys(mapping).map(Number);
+    const srcCols = Object.keys(colMapping).map(Number);
 
     // 逐行读取，避免 sheet_to_json 创建完整副本占用额外内存
     for (let r = range.s.r + 1; r <= range.e.r; r++) {
@@ -198,7 +275,7 @@ export class ExcelProcessor {
 
       const newRow: any[] = new Array(6).fill(null);
       for (const srcCol of srcCols) {
-        const dstCol = mapping[srcCol];
+        const dstCol = colMapping[srcCol];
         let value = srcCol - 1 < rowVals.length ? rowVals[srcCol - 1] : null;
 
         if (dstCol === 1) {
@@ -251,8 +328,6 @@ export class ExcelProcessor {
         }
       }
     }
-
-    this.emit({ type: 'writing', message: `已追加 ${result.length} 行数据到汇总文件` });
   }
 
   /** 保存汇总文件到磁盘 */
@@ -542,13 +617,15 @@ export class ExcelProcessor {
 
     // 统计总行数（使用sheet范围，避免加载全部数据）
     this.emit({ type: 'scanning', message: '正在统计文件行数...' });
+    this.fileRowCounts = new Map();
     for (const filePath of excelFiles) {
       try {
-        const wb = XLSX.readFile(filePath, { type: 'file' });
+        const wb = XLSX.readFile(filePath, { type: 'file', cellDates: true });
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName];
         const rows = this.countFileRows(sheet);
         this.totalRows += rows;
+        this.fileRowCounts.set(filePath, rows);
         this.emit({ type: 'scanning', message: `文件 ${path.basename(filePath)} 包含 ${rows} 行数据` });
       } catch (e: any) {
         this.emit({ type: 'error', message: `统计文件 ${path.basename(filePath)} 行数时出错: ${e.message}` });
@@ -562,18 +639,20 @@ export class ExcelProcessor {
 
     // 串行处理文件，收集所有数据
     let processedFiles = 0;
+    let appendRateFailed = false;
     for (let i = 0; i < excelFiles.length; i++) {
       const filePath = excelFiles[i];
       try {
+        const statRows = this.fileRowCounts.get(filePath) || 0;
         this.emit({
           type: 'processing',
           currentFile: path.basename(filePath),
           fileIndex: i + 1,
           totalFiles: excelFiles.length,
-          message: `正在处理: ${path.basename(filePath)} (${i + 1}/${excelFiles.length})`,
+          message: `正在处理: ${path.basename(filePath)} (${i + 1}/${excelFiles.length})，${statRows} 行`,
         });
 
-        const wb = XLSX.readFile(filePath, { type: 'file' });
+        const wb = XLSX.readFile(filePath, { type: 'file', cellDates: true });
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName] as XLSX.WorkSheet;
 
@@ -600,11 +679,22 @@ export class ExcelProcessor {
         if (pattern) {
           this.emit({ type: 'processing', message: `识别为格式: ${pattern.name}` });
           const data = this.processWorksheet(sheet, pattern);
+
+          // 校验：已追加行数必须等于统计行数
+          if (statRows > 0 && data.length !== statRows) {
+            const errMsg = `已追加 ${data.length} 行 ≠ 文件统计 ${statRows} 行，数据不一致，终止后续处理。请检查文件「${path.basename(filePath)}」`;
+            this.emit({ type: 'error', message: errMsg });
+            this.errors.push(errMsg);
+            appendRateFailed = true;
+            break;
+          }
+
           if (data.length > 0) {
             this.allData.push(...data);
             await this.appendToSummary(data);
-            this.emit({ type: 'processing', message: `成功处理 ${data.length} 行数据` });
+            this.emit({ type: 'processing', message: `已追加 ${data.length} 行数据到汇总文件` });
           }
+
           processedFiles++;
         } else {
           const filename = path.basename(filePath);

@@ -1,4 +1,4 @@
-const { createApp, ref, reactive, watch, nextTick, onMounted } = Vue;
+const { createApp, ref, reactive, watch, nextTick, onMounted, onUnmounted, computed } = Vue;
 
 // =========================== 组件定义 ===========================
 
@@ -12,6 +12,19 @@ const YearMonthPicker = {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = now.getMonth() + 1;
+    const currentDay = now.getDate();
+
+    // 默认值逻辑：每月21日及以后 → 下一个月（跨年递增年份）
+    let defaultYear = currentYear;
+    let defaultMonth = currentMonth;
+    if (currentDay > 20) {
+      if (currentMonth === 12) {
+        defaultYear = currentYear + 1;
+        defaultMonth = 1;
+      } else {
+        defaultMonth = currentMonth + 1;
+      }
+    }
 
     const years = [];
     for (let y = 2024; y <= currentYear + 1; y++) {
@@ -22,8 +35,29 @@ const YearMonthPicker = {
       months.push(m);
     }
 
-    const selectedYear = ref(currentYear);
-    const selectedMonth = ref(currentMonth);
+    const selectedYear = ref(defaultYear);
+    const selectedMonth = ref(defaultMonth);
+
+    // 系统时间显示（每秒更新）
+    const nowTime = ref(formatTime());
+
+    function formatTime() {
+      const d = new Date();
+      return d.getFullYear() + '年' +
+        String(d.getMonth() + 1).padStart(2, '0') + '月' +
+        String(d.getDate()).padStart(2, '0') + '日 ' +
+        String(d.getHours()).padStart(2, '0') + ':' +
+        String(d.getMinutes()).padStart(2, '0') + ':' +
+        String(d.getSeconds()).padStart(2, '0');
+    }
+
+    const timer = setInterval(function () {
+      nowTime.value = formatTime();
+    }, 1000);
+
+    onUnmounted(function () {
+      clearInterval(timer);
+    });
 
     function getYear() {
       return selectedYear.value;
@@ -37,7 +71,7 @@ const YearMonthPicker = {
 
     expose({ getYear, getMonth, getYearMonth });
 
-    return { years, months, selectedYear, selectedMonth };
+    return { years, months, selectedYear, selectedMonth, nowTime };
   },
 };
 
@@ -73,15 +107,6 @@ const ActionPanel = {
   emits: ['start', 'editConfig'],
 };
 
-// ---------- UnmatchedPanel ----------
-const UnmatchedPanel = {
-  template: '#unmatched-panel-template',
-  props: {
-    files: { type: Array, default: () => [] },
-    visible: { type: Boolean, default: false },
-  },
-};
-
 // ---------- LogPanel ----------
 const LogPanel = {
   template: '#log-panel-template',
@@ -106,6 +131,154 @@ const LogPanel = {
   },
 };
 
+// ---------- UserAddForm ----------
+const UserAddForm = {
+  template: '#user-add-form-template',
+  props: {
+    files: { type: Array, default: () => [] },
+    initialFile: { type: String, default: '' },
+    workDir: { type: String, default: '' },
+  },
+  emits: ['submit', 'cancel'],
+  setup(props, { emit, expose }) {
+    const selectedFile = ref('');
+    const businessUnit = ref('');
+    const excelHeaders = ref([]);
+    const loadingHeaders = ref(false);
+
+    // 独立 ref：每个标准字段一个（默认 '' 匹配 "不映射" option）
+    const mapDate = ref('');
+    const mapProduct = ref('');
+    const mapSpec = ref('');
+    const mapBatch = ref('');
+    const mapUnit = ref('');
+    const mapQuantity = ref('');
+
+    const dateShort = ref(false);
+    const dateLong = ref(false);
+
+    const canSubmit = computed(function () {
+      return !!businessUnit.value && !!selectedFile.value;
+    });
+
+    const readError = ref('');
+
+    async function onFileChange() {
+      mapDate.value = '';
+      mapProduct.value = '';
+      mapSpec.value = '';
+      mapBatch.value = '';
+      mapUnit.value = '';
+      mapQuantity.value = '';
+      dateShort.value = false;
+      dateLong.value = false;
+      readError.value = '';
+
+      if (!selectedFile.value) {
+        readError.value = '未指定文件';
+        return;
+      }
+      if (!window.electronAPI) {
+        readError.value = 'API 未就绪，请稍后重试';
+        return;
+      }
+
+      var fullPath = props.workDir
+        ? (props.workDir.replace(/[/\\]$/, '') + '\\' + selectedFile.value)
+        : selectedFile.value;
+
+      loadingHeaders.value = true;
+      try {
+        var hdrs = await window.electronAPI.readExcelHeaders(fullPath);
+        var list = Array.isArray(hdrs) ? hdrs : [];
+        excelHeaders.value = list;
+        if (list.length === 0) {
+          readError.value = '未读取到表头数据，请检查文件路径: ' + fullPath;
+        }
+      } catch (e) {
+        excelHeaders.value = [];
+        readError.value = '读取表头失败: ' + (e.message || e);
+      } finally {
+        loadingHeaders.value = false;
+      }
+    }
+
+    var formData = computed(function () {
+      // headers: { colNumber: "列名" }
+      var hdrs = {};
+      var list = excelHeaders.value || [];
+      for (var i = 0; i < list.length; i++) {
+        hdrs[String(i + 1)] = list[i];
+      }
+
+      // mapping: { sourceColNumber: targetColNumber }
+      var srcMapping = {};
+      var refs = [mapDate, mapProduct, mapSpec, mapBatch, mapUnit, mapQuantity];
+      for (var di = 0; di < refs.length; di++) {
+        var srcCol = refs[di].value;
+        if (srcCol !== '' && srcCol !== null && srcCol !== undefined) {
+          srcMapping[String(Number(srcCol))] = di + 1;
+        }
+      }
+
+      return {
+        businessUnit: businessUnit.value,
+        headers: hdrs,
+        mapping: srcMapping,
+        dateFormat: {
+          short: dateShort.value,
+          long: dateLong.value,
+        },
+      };
+    });
+
+    onMounted(function () {
+      var file = props.initialFile || (props.files.length > 0 ? props.files[0] : '');
+      if (file) {
+        selectedFile.value = file;
+        onFileChange();
+      }
+    });
+
+    function resetForm() {
+      selectedFile.value = '';
+      businessUnit.value = '';
+      excelHeaders.value = [];
+      mapDate.value = '';
+      mapProduct.value = '';
+      mapSpec.value = '';
+      mapBatch.value = '';
+      mapUnit.value = '';
+      mapQuantity.value = '';
+      dateShort.value = false;
+      dateLong.value = false;
+      readError.value = '';
+      loadingHeaders.value = false;
+    }
+
+    expose({ resetForm, selectedFile });
+
+    return {
+      selectedFile,
+      businessUnit,
+      excelHeaders,
+      loadingHeaders,
+      mapDate,
+      mapProduct,
+      mapSpec,
+      mapBatch,
+      mapUnit,
+      mapQuantity,
+      dateShort,
+      dateLong,
+      readError,
+      canSubmit,
+      formData,
+      onFileChange,
+    };
+  },
+};
+
 // =========================== 应用入口 ===========================
 
 const app = createApp({
@@ -115,9 +288,15 @@ const app = createApp({
     const workDir = ref('');
     const outputDir = ref('');
     const unmatchedFiles = ref([]);
+    const hasUnmatched = computed(function () {
+      return unmatchedFiles.value && unmatchedFiles.value.length > 0;
+    });
     const logEntries = ref([]);
     const progress = reactive({ visible: false, percent: 0, text: '0%' });
     const yearMonthPickerRef = ref(null);
+    const showUserAddForm = ref(false);
+    const userAddFormRef = ref(null);
+    const selectedUserFile = ref('');
 
     // ---- 工具函数 ----
 
@@ -167,6 +346,49 @@ const app = createApp({
       } catch (e) {
         const msg = typeof e === 'string' ? e : e.message || String(e);
         addLog('打开配置文件失败: ' + msg, 'error');
+      }
+    }
+
+    function handleUserAdd(filename) {
+      console.log('[App] handleUserAdd 被调用, 文件:', filename);
+      console.log('[App] unmatchedFiles.length:', unmatchedFiles.value.length);
+      if (!unmatchedFiles.value.length) {
+        addLog('没有未匹配的文件，无法自新增格式', 'error');
+        return;
+      }
+      selectedUserFile.value = filename;
+      showUserAddForm.value = true;
+      console.log('[App] showUserAddForm 已设置为 true');
+    }
+
+    function handleCancelForm() {
+      showUserAddForm.value = false;
+    }
+
+    async function handleFormSubmit(formData) {
+      if (!window.electronAPI) {
+        addLog('API 未就绪', 'error');
+        return;
+      }
+
+      addLog('正在新增格式规则...', 'info');
+      try {
+        const newName = await window.electronAPI.addPattern(formData);
+        addLog('已成功添加格式规则: ' + newName + ' (' + formData.businessUnit + ')', 'success');
+        addLog('请重新点击"开始处理"以使用新规则', 'info');
+        showUserAddForm.value = false;
+
+        // 从未匹配列表中移除对应文件
+        const userAddForm = userAddFormRef.value;
+        if (userAddForm && userAddForm.selectedFile) {
+          const idx = unmatchedFiles.value.indexOf(userAddForm.selectedFile);
+          if (idx >= 0) {
+            unmatchedFiles.value.splice(idx, 1);
+          }
+        }
+      } catch (e) {
+        const msg = typeof e === 'string' ? e : e.message || String(e);
+        addLog('新增格式规则失败: ' + msg, 'error');
       }
     }
 
@@ -311,14 +533,21 @@ const app = createApp({
       workDir,
       outputDir,
       unmatchedFiles,
+      hasUnmatched,
       logEntries,
       progress,
       yearMonthPickerRef,
+      showUserAddForm,
+      userAddFormRef,
+      selectedUserFile,
       addLog,
       clearLog,
       updateProgress,
       hideProgress,
       handleEditConfig,
+      handleUserAdd,
+      handleCancelForm,
+      handleFormSubmit,
       handleStartProcess,
     };
   },
@@ -328,8 +557,8 @@ const app = createApp({
 app.component('year-month-picker', YearMonthPicker);
 app.component('directory-picker', DirectoryPicker);
 app.component('action-panel', ActionPanel);
-app.component('unmatched-panel', UnmatchedPanel);
 app.component('log-panel', LogPanel);
+app.component('user-add-form', UserAddForm);
 
 // 挂载
 app.mount('#app');

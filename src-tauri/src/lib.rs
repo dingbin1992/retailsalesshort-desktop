@@ -181,6 +181,106 @@ async fn open_directory(_app: AppHandle, dir_path: String) -> Result<(), String>
     Ok(())
 }
 
+/// 读取指定 Excel 文件的表头行，返回表头字符串数组
+#[tauri::command]
+async fn read_excel_headers(file_path: String) -> Result<Vec<String>, String> {
+    let node_exe = find_node_exe();
+    let script = find_read_headers_js();
+
+    log::info!("读取 Excel 表头: {}", file_path);
+
+    let mut cmd = Command::new(&node_exe);
+    cmd.arg(script.to_string_lossy().to_string())
+        .arg(&file_path)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(windows)]
+    {
+        cmd.creation_flags(0x08000000);
+    }
+
+    let child = cmd.spawn()
+        .map_err(|e| format!("启动读表头进程失败: {}", e))?;
+
+    let output = child.wait_with_output()
+        .map_err(|e| format!("等待读表头进程失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("读取表头失败: {}", stderr));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let headers: Vec<String> = serde_json::from_str(&stdout)
+        .map_err(|e| format!("解析表头 JSON 失败: {} — 原始输出: {}", e, stdout))?;
+
+    Ok(headers)
+}
+
+#[derive(Debug, Deserialize)]
+struct NewPatternInput {
+    #[serde(rename = "businessUnit")]
+    business_unit: String,
+    headers: serde_json::Value,
+    mapping: serde_json::Value,
+}
+
+/// 向 patterns.json 追加一条新的格式规则
+#[tauri::command]
+fn add_pattern(input: NewPatternInput) -> Result<String, String> {
+    let config_path = get_config_path();
+
+    // 1) 读取现有配置
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+
+    let mut config: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+
+    // 2) 生成新的 pattern name
+    let patterns = config["patterns"].as_array()
+        .ok_or("配置文件格式错误: patterns 不是数组")?;
+
+    let mut max_num = 0u32;
+    for p in patterns {
+        if let Some(name) = p["name"].as_str() {
+            if let Some(num_str) = name.strip_prefix("pattern") {
+                if let Ok(n) = num_str.parse::<u32>() {
+                    if n > max_num { max_num = n; }
+                }
+            }
+        }
+    }
+    let new_name = format!("pattern{}", max_num + 1);
+
+    // 3) 构建新 pattern
+    let new_pattern = serde_json::json!({
+        "name": new_name,
+        "businessUnit": input.business_unit,
+        "headers": input.headers,
+        "mapping": input.mapping,
+    });
+
+    // 4) 追加到 patterns 数组
+    if let Some(arr) = config["patterns"].as_array_mut() {
+        arr.push(new_pattern);
+    } else {
+        return Err("patterns 不是数组，无法追加".to_string());
+    }
+
+    // 5) 写回文件
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+
+    std::fs::write(&config_path, formatted)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+
+    log::info!("已添加新格式规则: {} ({})", new_name, input.business_unit);
+
+    Ok(new_name)
+}
+
 fn find_node_exe() -> PathBuf {
     let exe_dir = std::env::current_exe()
         .ok()
@@ -215,6 +315,25 @@ fn find_cli_js() -> PathBuf {
     let candidates = vec![
         exe_dir.join("dist").join("processing").join("cli.js"),
         PathBuf::from("dist").join("processing").join("cli.js"),
+    ];
+
+    for p in &candidates {
+        if p.exists() {
+            return p.clone();
+        }
+    }
+    candidates[1].clone()
+}
+
+fn find_read_headers_js() -> PathBuf {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_default();
+
+    let candidates = vec![
+        exe_dir.join("dist").join("processing").join("read-headers.js"),
+        PathBuf::from("dist").join("processing").join("read-headers.js"),
     ];
 
     for p in &candidates {
@@ -399,6 +518,8 @@ pub fn run() {
             get_default_directories,
             open_config_file,
             open_directory,
+            read_excel_headers,
+            add_pattern,
             start_processing,
         ])
         .run(tauri::generate_context!())

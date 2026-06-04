@@ -50,7 +50,17 @@ window.electronAPI = {
   // 打开配置文件
   openConfigFile() {
     return invoke('open_config_file');
-  }
+  },
+
+  // 读取 Excel 文件表头
+  readExcelHeaders(filePath) {
+    return invoke('read_excel_headers', { filePath });
+  },
+
+  // 新增格式规则到 patterns.json
+  addPattern(patternData) {
+    return invoke('add_pattern', { input: patternData });
+  },
 };
 
 console.log('[tauri-bridge] electronAPI 桥接就绪');

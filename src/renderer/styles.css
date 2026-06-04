@@ -1,3 +1,12 @@
+/* 自定义字体 */
+@font-face {
+  font-family: 'MonarchMono';
+  src: url('MonarchMono-SemiBold.ttf') format('truetype');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* 全局变量 */
 :root {
   --primary: #7c3aed;
@@ -18,7 +27,7 @@
   --log-warn: #fbbf24;
   --radius: 12px;
   --shadow: 0 2px 8px rgba(124, 58, 237, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
-  --font: "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
+  --font: "MonarchMono", "Microsoft YaHei", "微软雅黑", "PingFang SC", "Noto Sans SC", sans-serif;
   --font-size-sm: 18px;
   --font-size-base: 19px;
   --font-size-lg: 23px;
@@ -145,6 +154,27 @@ header .subtitle {
   font-weight: 600;
   color: var(--text);
   margin-bottom: 8px;
+}
+
+.label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.label-row label {
+  margin-bottom: 0;
+}
+
+.sys-time {
+  font-size: 16px;
+  color: var(--text-secondary);
+  background: #f3f0fa;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-family: "MonarchMono", "Cascadia Code", "Fira Code", "Consolas", "Microsoft YaHei", monospace;
+  letter-spacing: 0.5px;
 }
 
 .input-row {
@@ -311,18 +341,33 @@ header .subtitle {
 
 .unmatched-list {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
 }
 
-.unmatched-item {
+.unmatched-item-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 6px 14px;
   background: #fff;
   border: 1px solid #fed7aa;
-  border-radius: 6px;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.unmatched-item-row:hover {
+  border-color: var(--accent);
+}
+
+.unmatched-item {
+  flex: 1;
   font-size: var(--font-size-sm);
   color: #9a3412;
   font-family: var(--font);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 日志面板 */
@@ -368,7 +413,7 @@ header .subtitle {
   overflow-y: auto;
   background: var(--log-bg);
   padding: 14px 18px;
-  font-family: "Cascadia Code", "Fira Code", "Consolas", "Microsoft YaHei", monospace;
+  font-family: "MonarchMono", "Cascadia Code", "Fira Code", "Consolas", "Microsoft YaHei", monospace;
   font-size: 16px;
   line-height: 1.8;
 }
@@ -405,4 +450,330 @@ header .subtitle {
 
 .log-area::-webkit-scrollbar-thumb:hover {
   background: #6b5b95;
+}
+
+/* ========== 未匹配面板-操作按钮 ========== */
+
+
+.btn-user-add {
+  padding: 6px 16px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: 1px solid #059669;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #fff;
+  font-size: var(--font-size-sm);
+  font-family: var(--font);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+}
+
+.btn-user-add:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+}
+
+/* ========== 模态框 ========== */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 27, 46, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-dialog {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  width: 720px;
+  max-width: 94vw;
+  max-height: 85vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  animation: slideUp 0.25s ease;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(24px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  background: #faf8ff;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.modal-header h2 {
+  font-size: var(--font-size-lg);
+  font-weight: 700;
+  color: var(--primary-dark);
+  letter-spacing: 1px;
+}
+
+.modal-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  font-size: 26px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.2s;
+}
+
+.modal-close:hover {
+  background: #f3f0fa;
+  color: var(--primary);
+}
+
+.modal-body {
+  padding: 20px 24px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: #faf8ff;
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+
+/* ========== 表单 ========== */
+
+.form-group {
+  margin-bottom: 18px;
+}
+
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-file-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  background: #faf8ff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.form-file-name {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.form-group label {
+  display: block;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.form-input,
+.form-select {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: var(--font-size-sm);
+  font-family: var(--font);
+  color: var(--text);
+  background: #faf8ff;
+  outline: none;
+  transition: border-color 0.25s, box-shadow 0.25s;
+}
+
+.form-input:focus,
+.form-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.1);
+  background: #fff;
+}
+
+.form-hint {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 16px;
+  color: var(--primary-light);
+  font-style: italic;
+}
+
+.read-error {
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  color: #dc2626;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.form-file-display {
+  padding: 11px 14px;
+  background: #f3f0fa;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.form-file-name {
+  flex: 1;
+  font-weight: 600;
+}
+
+/* ========== 映射表格 ========== */
+
+.mapping-table {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.mapping-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+
+.mapping-row:last-child {
+  border-bottom: none;
+}
+
+.mapping-row-header {
+  background: #faf8ff;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-secondary);
+  padding: 10px 14px;
+}
+
+.mapping-label {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mapping-select-col {
+  flex: 1;
+  font-size: 16px;
+}
+
+.mapping-format-col {
+  width: 120px;
+  font-size: 16px;
+}
+
+.mapping-select {
+  flex: 1;
+}
+
+.mapping-format {
+  width: 120px;
+  flex-shrink: 0;
+  font-size: 15px;
+  color: var(--text-secondary);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.checkbox-label {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  font-size: 15px !important;
+  font-weight: 400 !important;
+  color: var(--text-secondary) !important;
+  cursor: pointer;
+  margin-bottom: 0 !important;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* ========== 模态框按钮 ========== */
+
+.btn-cancel {
+  padding: 10px 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  font-family: var(--font);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s;
+}
+
+.btn-cancel:hover {
+  background: #f3f0fa;
+  color: var(--primary);
+}
+
+.btn-submit {
+  padding: 10px 28px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+  color: #fff;
+  font-size: var(--font-size-sm);
+  font-family: var(--font);
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s;
+  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.3);
+}
+
+.btn-submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.4);
+}
+
+.btn-submit:disabled {
+  background: linear-gradient(135deg, #c4b5e0, #a78bfa);
+  box-shadow: none;
+  cursor: not-allowed;
 }
