@@ -1,6 +1,7 @@
 node_modules/
 dist/
 release/
+releases/
 *.js.map
 .claude/
 src-tauri/target/
