@@ -1,9 +1,10 @@
 {
   "name": "retailsalesshort-desktop",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "description": "湖北区域每日网上下载出库汇总工具",
   "scripts": {
-    "build": "esbuild src/processing/cli.ts --bundle --platform=node --target=node20 --outfile=dist/processing/cli.js && esbuild src/processing/read-headers.ts --bundle --platform=node --target=node20 --outfile=dist/processing/read-headers.js && node scripts/copy-tauri-api.js",
+    "build:renderer": "esbuild src/renderer/main.tsx --bundle --platform=browser --target=es2020 --format=esm --jsx=automatic --jsx-import-source=preact --outfile=src/renderer/dist/main.js && esbuild src/renderer/config-editor.tsx --bundle --platform=browser --target=es2020 --format=esm --jsx=automatic --jsx-import-source=preact --outfile=src/renderer/dist/config-editor.js",
+    "build": "esbuild src/processing/cli.ts --bundle --platform=node --target=node20 --outfile=dist/processing/cli.js && esbuild src/processing/read-headers.ts --bundle --platform=node --target=node20 --outfile=dist/processing/read-headers.js && node scripts/copy-tauri-api.js && npm run build:renderer",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -22,6 +23,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
     "exceljs": "^4.4.0",
+    "preact": "^10.29.2",
     "xlsx": "^0.18.5"
   }
 }

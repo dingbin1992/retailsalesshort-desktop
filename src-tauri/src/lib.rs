@@ -255,12 +255,15 @@ fn add_pattern(input: NewPatternInput) -> Result<String, String> {
     let new_name = format!("pattern{}", max_num + 1);
 
     // 3) 构建新 pattern
-    let new_pattern = serde_json::json!({
+    let mut new_pattern = serde_json::json!({
         "name": new_name,
         "businessUnit": input.business_unit,
         "headers": input.headers,
         "mapping": input.mapping,
     });
+
+    // 3.5) 清理未映射列，减少持久化文件大小
+    sanitize_pattern(&mut new_pattern);
 
     // 4) 追加到 patterns 数组
     if let Some(arr) = config["patterns"].as_array_mut() {
@@ -521,7 +524,158 @@ pub fn run() {
             read_excel_headers,
             add_pattern,
             start_processing,
+            get_patterns_config,
+            update_pattern,
+            delete_pattern,
+            export_patterns_file,
+            import_patterns_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+// ========== 配置文件 Web UI 管理命令 ==========
+
+/// 清理 pattern 数据：移除未映射（headers 中存在但 mapping 中不存在或 target 非法）的列，
+/// 减少持久化文件大小。前后端都会做这个过滤，前后端都做以确保数据洁净。
+fn sanitize_pattern(pattern: &mut serde_json::Value) {
+    // 第一步：用不可变借用，收集需要清理的列号
+    let to_remove: Vec<String> = match (
+        pattern.get("headers").and_then(|v| v.as_object()),
+        pattern.get("mapping").and_then(|v| v.as_object()),
+    ) {
+        (Some(h), Some(m)) => h
+            .keys()
+            .filter(|k| match m.get(*k).and_then(|v| v.as_i64()) {
+                Some(v) => !(1..=6).contains(&v),
+                None => true,
+            })
+            .cloned()
+            .collect(),
+        _ => return,
+    };
+    // 第二步：分两次可变借用真正删除
+    if let Some(h) = pattern.get_mut("headers").and_then(|v| v.as_object_mut()) {
+        for k in &to_remove { h.remove(k); }
+    }
+    if let Some(m) = pattern.get_mut("mapping").and_then(|v| v.as_object_mut()) {
+        for k in &to_remove { m.remove(k); }
+    }
+}
+
+/// 读取完整的 patterns.json 配置
+#[tauri::command]
+fn get_patterns_config() -> Result<String, String> {
+    let config_path = get_config_path();
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+    Ok(raw)
+}
+
+/// 更新指定名称的 pattern
+#[tauri::command]
+fn update_pattern(name: String, pattern_data: serde_json::Value) -> Result<bool, String> {
+    let config_path = get_config_path();
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let mut config: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let patterns = config["patterns"].as_array_mut()
+        .ok_or("配置文件格式错误: patterns 不是数组")?;
+    let mut found = false;
+    for pat in patterns.iter_mut() {
+        if pat["name"].as_str() == Some(&name) {
+            if let Some(bu) = pattern_data.get("businessUnit") {
+                pat["businessUnit"] = bu.clone();
+            }
+            if let Some(hdrs) = pattern_data.get("headers") {
+                pat["headers"] = hdrs.clone();
+            }
+            if let Some(mapping) = pattern_data.get("mapping") {
+                pat["mapping"] = mapping.clone();
+            }
+            // 清理未映射列
+            sanitize_pattern(pat);
+            found = true;
+            break;
+        }
+    }
+    if !found {
+        return Err(format!("未找到名为 {} 的格式规则", name));
+    }
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    std::fs::write(&config_path, formatted)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+    log::info!("已更新格式规则: {}", name);
+    Ok(true)
+}
+
+/// 删除指定名称的 pattern
+#[tauri::command]
+fn delete_pattern(name: String) -> Result<bool, String> {
+    let config_path = get_config_path();
+    let raw = std::fs::read_to_string(&config_path)
+        .map_err(|e| format!("读取配置文件失败: {}", e))?;
+    let mut config: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| format!("解析配置文件失败: {}", e))?;
+    let patterns = config["patterns"].as_array_mut()
+        .ok_or("配置文件格式错误: patterns 不是数组")?;
+    let original_len = patterns.len();
+    patterns.retain(|pat| pat["name"].as_str() != Some(&name));
+    if patterns.len() == original_len {
+        return Err(format!("未找到名为 {} 的格式规则", name));
+    }
+    let formatted = serde_json::to_string_pretty(&config)
+        .map_err(|e| format!("序列化配置失败: {}", e))?;
+    std::fs::write(&config_path, formatted)
+        .map_err(|e| format!("写入配置文件失败: {}", e))?;
+    log::info!("已删除格式规则: {}", name);
+    Ok(true)
+}
+
+/// 导出 patterns.json 到用户选择的文件
+#[tauri::command]
+async fn export_patterns_file(app: AppHandle, json: String) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    use std::io::Write;
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("JSON", &["json"])
+        .set_file_name("patterns.json")
+        .blocking_save_file();
+    match path {
+        Some(p) => {
+            let path_buf = p.into_path().map_err(|e| format!("解析路径失败: {}", e))?;
+            let mut file = std::fs::File::create(&path_buf)
+                .map_err(|e| format!("创建文件失败: {}", e))?;
+            file.write_all(json.as_bytes())
+                .map_err(|e| format!("写入文件失败: {}", e))?;
+            log::info!("已导出配置到: {}", path_buf.display());
+            Ok(Some(path_buf.to_string_lossy().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+/// 从用户选择的 JSON 文件读取配置内容
+#[tauri::command]
+async fn import_patterns_file(app: AppHandle) -> Result<Option<String>, String> {
+    use tauri_plugin_dialog::DialogExt;
+    let path = app
+        .dialog()
+        .file()
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+    match path {
+        Some(p) => {
+            let path_buf = p.into_path().map_err(|e| format!("解析路径失败: {}", e))?;
+            let content = std::fs::read_to_string(&path_buf)
+                .map_err(|e| format!("读取文件失败: {}", e))?;
+            log::info!("已读取导入文件: {} ({} 字节)", path_buf.display(), content.len());
+            Ok(Some(content))
+        }
+        None => Ok(None),
+    }
+}
+
