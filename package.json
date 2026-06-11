@@ -1,10 +1,12 @@
 {
   "name": "retailsalesshort-desktop",
-  "version": "3.3.0",
+  "version": "3.4.0",
   "description": "湖北区域每日网上下载出库汇总工具",
   "scripts": {
+    "build:bridge": "esbuild src/renderer/tauri-bridge.ts --platform=browser --format=esm --target=es2020 --outfile=src/renderer/tauri-bridge.js",
     "build:renderer": "esbuild src/renderer/main.tsx --bundle --platform=browser --target=es2020 --format=esm --jsx=automatic --jsx-import-source=preact --outfile=src/renderer/dist/main.js && esbuild src/renderer/config-editor.tsx --bundle --platform=browser --target=es2020 --format=esm --jsx=automatic --jsx-import-source=preact --outfile=src/renderer/dist/config-editor.js",
-    "build": "esbuild src/processing/cli.ts --bundle --platform=node --target=node20 --outfile=dist/processing/cli.js && esbuild src/processing/read-headers.ts --bundle --platform=node --target=node20 --outfile=dist/processing/read-headers.js && node scripts/copy-tauri-api.js && npm run build:renderer",
+    "build:scripts": "esbuild scripts/copy-tauri-api.ts --platform=node --format=cjs --target=node20 --outfile=scripts/copy-tauri-api.js && esbuild scripts/download-node.ts --platform=node --format=cjs --target=node20 --outfile=scripts/download-node.js",
+    "build": "npm run build:scripts && node scripts/copy-tauri-api.js && npm run build:bridge && esbuild src/processing/cli.ts --bundle --platform=node --target=node20 --outfile=dist/processing/cli.js && esbuild src/processing/read-headers.ts --bundle --platform=node --target=node20 --outfile=dist/processing/read-headers.js && npm run build:renderer",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -12,7 +14,7 @@
     "tauri:build:mac": "tauri build --target aarch64-apple-darwin",
     "tauri:build:mac:x64": "tauri build --target x86_64-apple-darwin",
     "tauri:build:linux": "tauri build --target x86_64-unknown-linux-gnu",
-    "download:node": "node scripts/download-node.js"
+    "download:node": "esbuild scripts/download-node.ts --platform=node --format=cjs --target=node20 --outfile=scripts/download-node.js && node scripts/download-node.js"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.2",
