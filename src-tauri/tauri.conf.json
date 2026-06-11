@@ -26,13 +26,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "dmg",
-      "deb",
-      "rpm",
-      "appimage"
-    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -45,20 +38,28 @@
       "../dist/processing/cli.js": "dist/processing/cli.js",
       "../dist/processing/read-headers.js": "dist/processing/read-headers.js"
     },
+    "targets": ["nsis", "dmg", "deb", "rpm", "appimage", "app"],
     "windows": {
       "nsis": {
         "installMode": "perMachine",
         "installerIcon": "icons/icon.ico",
-        "languages": ["English", "SimpChinese"]
+        "languages": ["SimpChinese"]
       }
     },
     "macOS": {
-      "bundleName": "流向整理工具",
       "minimumSystemVersion": "10.15"
     },
     "linux": {
       "deb": {
-        "depends": []
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1",
+          "librsvg2-2",
+          "libssl3",
+          "libsoup-3.0-0",
+          "libjavascriptcoregtk-4.1-0"
+        ]
       }
     }
   }
