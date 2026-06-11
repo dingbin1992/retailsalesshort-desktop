@@ -2,7 +2,44 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as XLSX from 'xlsx';
 import * as ExcelJS from 'exceljs';
+import * as iconv from 'iconv-lite';
 import { PatternDefinition, ProgressEvent, ProcessingResult } from './types';
+
+// ========== HTML 假 xls 兼容 ==========
+
+function looksLikeHtml(buf: Buffer): boolean {
+  let start = 0;
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) start = 3;
+  const head = buf.slice(start, Math.min(buf.length, 2048)).toString('ascii').toLowerCase().trimStart();
+  return head.startsWith('<!doctype html') ||
+         head.startsWith('<html') ||
+         head.startsWith('<head') ||
+         head.startsWith('<meta') ||
+         head.startsWith('<body') ||
+         head.startsWith('<table');
+}
+
+function detectHtmlCharset(raw: string): string {
+  const m = raw.match(/<meta[^>]+charset=["']?([\w-]+)/i);
+  if (m) return m[1].toLowerCase();
+  return 'gb2312';
+}
+
+function decodeHtmlBuffer(buf: Buffer): string {
+  const head = buf.slice(0, Math.min(buf.length, 4096));
+  if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) {
+    return buf.slice(3).toString('utf-8');
+  }
+  const asciiHead = head.toString('ascii');
+  const charset = detectHtmlCharset(asciiHead);
+  if (charset && /^(utf-?8|gbk|gb2312|gb18030|big5|shift_jis|euc-?jp|ks_c_5601)/i.test(charset)) {
+    try {
+      return iconv.decode(buf, charset);
+    } catch (_) { /* 退化到 GBK */ }
+  }
+  try { return iconv.decode(buf, 'gbk'); } catch (_) { /* ignore */ }
+  return buf.toString('utf-8');
+}
 
 const BASE_TABLE_PATH = 'H:\\0、工作\\0、每日纯销统计\\☆☆纯销统计基表.xlsx';
 const BASE_DIR = 'H:\\0、工作\\0、每日纯销统计';
@@ -39,6 +76,16 @@ export class ExcelProcessor {
     if (this.onProgress) {
       this.onProgress(event);
     }
+  }
+
+  /** 读取工作簿：自动兼容真 xlsx/xls 和 HTML 假 xls */
+  private readWorkbook(filePath: string): XLSX.WorkBook {
+    const buf = fs.readFileSync(filePath);
+    if (looksLikeHtml(buf)) {
+      const html = decodeHtmlBuffer(buf);
+      return XLSX.read(html, { type: 'string', cellDates: true });
+    }
+    return XLSX.readFile(filePath, { type: 'file', cellDates: true });
   }
 
   // ========== 路径工具 ==========
@@ -620,7 +667,7 @@ export class ExcelProcessor {
     this.fileRowCounts = new Map();
     for (const filePath of excelFiles) {
       try {
-        const wb = XLSX.readFile(filePath, { type: 'file', cellDates: true });
+        const wb = this.readWorkbook(filePath);
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName];
         const rows = this.countFileRows(sheet);
@@ -652,7 +699,7 @@ export class ExcelProcessor {
           message: `正在处理: ${path.basename(filePath)} (${i + 1}/${excelFiles.length})，${statRows} 行`,
         });
 
-        const wb = XLSX.readFile(filePath, { type: 'file', cellDates: true });
+        const wb = this.readWorkbook(filePath);
         const sheetName = wb.SheetNames[0];
         const sheet = wb.Sheets[sheetName] as XLSX.WorkSheet;
 
