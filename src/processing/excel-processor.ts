@@ -88,6 +88,11 @@ export class ExcelProcessor {
     return XLSX.readFile(filePath, { type: 'file', cellDates: true });
   }
 
+  /** 读取工作簿（不使用 cellDates）：用于获取原始 Excel 序列号 */
+  private readWorkbookNoCellDates(filePath: string): XLSX.WorkBook {
+    return XLSX.readFile(filePath, { type: 'file' });
+  }
+
   // ========== 路径工具 ==========
 
   /** 将 "2025年11月" 转为 "25年11月", "2026年3月" 转为 "26年03月" */
@@ -218,6 +223,16 @@ export class ExcelProcessor {
 
   // ========== 日期标准化 ==========
 
+  /** Excel 日期序列号 → yyyy-mm-dd 字符串（用 UTC 避免时区偏移） */
+  private excelSerialToDateStr(serial: number): string {
+    const ms = (serial - 25569) * 86400 * 1000;
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
+
   normalizeDate(value: any, patternName: string, srcCol: number): any {
     if (value === null || value === undefined || value === '') {
       return value;
@@ -259,7 +274,7 @@ export class ExcelProcessor {
 
   // ========== 处理单个工作表 ==========
 
-  processWorksheet(sheet: XLSX.WorkSheet, pattern: PatternDefinition): any[][] {
+  processWorksheet(sheet: XLSX.WorkSheet, pattern: PatternDefinition, rawSheet?: XLSX.WorkSheet): any[][] {
     const ref = sheet['!ref'];
     if (!ref) return [];
 
@@ -326,7 +341,19 @@ export class ExcelProcessor {
         let value = srcCol - 1 < rowVals.length ? rowVals[srcCol - 1] : null;
 
         if (dstCol === 1) {
-          value = this.normalizeDate(value, pattern.name, srcCol);
+          // 荆门市医药药材有限公司（pattern9/pattern11）：XLSX cellDates 有时区偏移，
+          // 需要用原始序列号转日期，避免差1天
+          if ((pattern.name === 'pattern9' || pattern.name === 'pattern11') && rawSheet) {
+            const rawCell = rawSheet[XLSX.utils.encode_cell({ r: range.s.r + (r - range.s.r), c: srcCol - 1 })];
+            const rawVal = rawCell ? rawCell.v : null;
+            if (typeof rawVal === 'number') {
+              value = this.excelSerialToDateStr(rawVal);
+            } else {
+              value = this.normalizeDate(value, pattern.name, srcCol);
+            }
+          } else {
+            value = this.normalizeDate(value, pattern.name, srcCol);
+          }
         } else if (typeof value === 'string') {
           if (pattern.name === 'pattern8' && srcCol === 2) {
             if (value.includes(' ')) value = value.split(' ')[0];
@@ -725,7 +752,13 @@ export class ExcelProcessor {
 
         if (pattern) {
           this.emit({ type: 'processing', message: `识别为格式: ${pattern.name}` });
-          const data = this.processWorksheet(sheet, pattern);
+          // 荆门市医药药材有限公司：XLSX cellDates 有时区偏移，需单独读取原始序列号
+          let rawSheet: XLSX.WorkSheet | undefined;
+          if (pattern.name === 'pattern9' || pattern.name === 'pattern11') {
+            const rawWb = this.readWorkbookNoCellDates(filePath);
+            rawSheet = rawWb.Sheets[rawWb.SheetNames[0]];
+          }
+          const data = this.processWorksheet(sheet, pattern, rawSheet);
 
           // 校验：已追加行数必须等于统计行数
           if (statRows > 0 && data.length !== statRows) {

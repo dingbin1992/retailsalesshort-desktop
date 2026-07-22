@@ -6,6 +6,8 @@ releases/
 .claude/
 src-tauri/target/
 node-portable/
+测试数据/
+.mimocode/
 
 # 编译产物（由构建脚本从 .ts 自动生成，不纳入版本控制）
 scripts/*.js
