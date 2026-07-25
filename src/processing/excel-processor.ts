@@ -341,9 +341,8 @@ export class ExcelProcessor {
         let value = srcCol - 1 < rowVals.length ? rowVals[srcCol - 1] : null;
 
         if (dstCol === 1) {
-          // 荆门市医药药材有限公司（pattern9/pattern11）：XLSX cellDates 有时区偏移，
-          // 需要用原始序列号转日期，避免差1天
-          if ((pattern.name === 'pattern9' || pattern.name === 'pattern11') && rawSheet) {
+          // 部分商业公司：XLSX cellDates 有时区偏移，需要用原始序列号转日期，避免差1天
+          if ((pattern.name === 'pattern9' || pattern.name === 'pattern11' || pattern.name === 'pattern7' || pattern.name === 'pattern16') && rawSheet) {
             const rawCell = rawSheet[XLSX.utils.encode_cell({ r: range.s.r + (r - range.s.r), c: srcCol - 1 })];
             const rawVal = rawCell ? rawCell.v : null;
             if (typeof rawVal === 'number') {
@@ -752,9 +751,9 @@ export class ExcelProcessor {
 
         if (pattern) {
           this.emit({ type: 'processing', message: `识别为格式: ${pattern.name}` });
-          // 荆门市医药药材有限公司：XLSX cellDates 有时区偏移，需单独读取原始序列号
+          // 部分商业公司：XLSX cellDates 有时区偏移，需单独读取原始序列号
           let rawSheet: XLSX.WorkSheet | undefined;
-          if (pattern.name === 'pattern9' || pattern.name === 'pattern11') {
+          if (pattern.name === 'pattern9' || pattern.name === 'pattern11' || pattern.name === 'pattern7' || pattern.name === 'pattern16') {
             const rawWb = this.readWorkbookNoCellDates(filePath);
             rawSheet = rawWb.Sheets[rawWb.SheetNames[0]];
           }
