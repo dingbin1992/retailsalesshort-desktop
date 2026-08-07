@@ -9,6 +9,8 @@ export interface PatternDefinition {
   mapping: Record<string, number>;
   dateFormat?: boolean;
   dateCol?: number;
+  /** 可选：商业单位所在列（1-based），配置后逐行从该列读取商业单位名称，替代写死的 businessUnit */
+  businessUnitCol?: number;
 }
 
 // patterns.json 的顶层结构

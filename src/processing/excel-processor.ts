@@ -233,7 +233,7 @@ export class ExcelProcessor {
     return `${y}-${m}-${day}`;
   }
 
-  normalizeDate(value: any, patternName: string, srcCol: number): any {
+  normalizeDate(value: any): any {
     if (value === null || value === undefined || value === '') {
       return value;
     }
@@ -244,10 +244,11 @@ export class ExcelProcessor {
     }
 
     if (typeof value === 'string') {
-      if (patternName === 'pattern8' && srcCol === 2) {
-        if (value.includes(' ')) {
-          value = value.split(' ')[0];
-        }
+      // 兼容带时间的日期字符串（"2025-01-05 10:30:00"、"2025/01/05 10:30"、"2025-01-05T10:30:00" 等）：
+      // 先截取日期部分，避免后续去空格把时间粘连到日期上（如 "2025-01-0510:30:00"）
+      const dateHead = value.trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?=\s|T|$)/);
+      if (dateHead) {
+        value = `${dateHead[1]}-${dateHead[2]}-${dateHead[3]}`;
       } else {
         value = value.replace(/ /g, '');
       }
@@ -322,6 +323,10 @@ export class ExcelProcessor {
     const result: any[][] = [];
     const srcCols = Object.keys(colMapping).map(Number);
 
+    // 可选：商业单位列（patterns.json 中的 businessUnitCol，1-based）。
+    // 配置后逐行从该列读取商业单位名称，替代写死的 pattern.businessUnit（兼容一文件多商业单位）
+    const buCol = pattern.businessUnitCol || 0;
+
     // 逐行读取，避免 sheet_to_json 创建完整副本占用额外内存
     for (let r = range.s.r + 1; r <= range.e.r; r++) {
       let hasData = false;
@@ -348,10 +353,10 @@ export class ExcelProcessor {
             if (typeof rawVal === 'number') {
               value = this.excelSerialToDateStr(rawVal);
             } else {
-              value = this.normalizeDate(value, pattern.name, srcCol);
+              value = this.normalizeDate(value);
             }
           } else {
-            value = this.normalizeDate(value, pattern.name, srcCol);
+            value = this.normalizeDate(value);
           }
         } else if (typeof value === 'string') {
           if (pattern.name === 'pattern8' && srcCol === 2) {
@@ -370,7 +375,15 @@ export class ExcelProcessor {
         if (!isNaN(num)) newRow[5] = num;
       }
 
-      newRow.unshift(pattern.businessUnit);
+      let businessUnit = pattern.businessUnit;
+      if (buCol > 0) {
+        const buCell = sheet[XLSX.utils.encode_cell({ r, c: buCol - 1 })];
+        const buVal = buCell ? buCell.v : null;
+        if (buVal !== null && buVal !== undefined && String(buVal).trim() !== '') {
+          businessUnit = String(buVal).trim();
+        }
+      }
+      newRow.unshift(businessUnit);
       result.push(newRow);
     }
 
