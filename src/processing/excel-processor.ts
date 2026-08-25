@@ -548,6 +548,16 @@ export class ExcelProcessor {
       ws = targetWb.addWorksheet('纯销明细');
     }
 
+    // 步骤1.5：清空现有数据（从第2行开始删除，只保留第1行表头）
+    const existingRowCount = ws.rowCount;
+    if (existingRowCount > 1) {
+      this.emit({ type: 'cleaning', message: `清空纯销明细现有数据（共 ${existingRowCount - 1} 行）...` });
+      // 从最后一行开始删除，避免行号变化问题
+      for (let i = existingRowCount; i >= 2; i--) {
+        ws.spliceRows(i, 1);
+      }
+    }
+
     // 步骤2：写入汇总数据到 A-G 列（从第2行开始，第1行为表头）
     this.emit({ type: 'writing', message: `正在粘贴 ${this.allData.length} 行数据到纯销明细...` });
     for (let i = 0; i < this.allData.length; i++) {
